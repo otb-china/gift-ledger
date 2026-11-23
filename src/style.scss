@@ -238,7 +238,23 @@ html::-webkit-scrollbar {
   color: #ffffff;
 }
 
-.van-dialog.app-dialog.danger .van-dialog__confirm {
+.van-dialog.app-dialog--danger .van-dialog__header::before {
+  content: "!";
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: #fff0ed;
+  box-shadow: 0 0 0 6px #fff7f5;
+  color: #d24b43;
+  font-size: 24px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.van-dialog.app-dialog--danger .van-dialog__confirm {
   background: linear-gradient(135deg, #e8675f 0%, #d24b43 100%);
   color: #ffffff;
 }

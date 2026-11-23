@@ -78,19 +78,17 @@
                   <span>{{ item.gift }}</span>
                 </span>
               </div>
-              <div class="exchange-body">
-                <dl class="amounts">
-                  <div class="amount given" :class="{ empty: !item.given }">
-                    <dt>送出</dt>
-                    <dd><template v-if="item.given"><small>¥</small>{{ displayAmount(item.given) }}</template><template v-else>—</template></dd>
-                  </div>
-                  <div class="amount received" :class="{ empty: !item.received }">
-                    <dt>收到</dt>
-                    <dd><template v-if="item.received"><small>¥</small>{{ displayAmount(item.received) }}</template><template v-else>—</template></dd>
-                  </div>
-                </dl>
-                <p class="balance-hint">{{ balanceHint(item) }}</p>
-              </div>
+              <dl class="amounts">
+                <div class="amount given" :class="{ empty: !item.given }">
+                  <dt>送出</dt>
+                  <dd><template v-if="item.given"><small>¥</small>{{ displayAmount(item.given) }}</template><template v-else>—</template></dd>
+                </div>
+                <div class="amount received" :class="{ empty: !item.received }">
+                  <dt>收到</dt>
+                  <dd><template v-if="item.received"><small>¥</small>{{ displayAmount(item.received) }}</template><template v-else>—</template></dd>
+                </div>
+                <span class="balance-hint">{{ balanceHint(item) }}</span>
+              </dl>
             </div>
           </SwipeDeleteRow>
         </article>
@@ -380,7 +378,7 @@ function renameBook(book: LedgerBook) {
 
 function deleteBook(book: LedgerBook) {
   if (books.value.length < 2) return;
-  showConfirmDialog({ title: "删除账本", message: `永久删除“${book.name}”及其全部记录和回收站内容？`, confirmButtonText: "删除", className: "app-dialog danger" }).then(() => {
+  showConfirmDialog({ title: "删除账本", message: `永久删除“${book.name}”及其全部记录和回收站内容？`, confirmButtonText: "删除", className: "app-dialog app-dialog--danger" }).then(() => {
     books.value = books.value.filter(entry => entry.id !== book.id);
     if (activeBook.value === book.id) activeBook.value = books.value[0]!.id;
     items.value = items.value.filter(item => item.bookId !== book.id);
@@ -458,12 +456,12 @@ function isSettled(item: SettlementFields) {
 }
 
 function balanceHint(item: LedgerItem) {
-  if (isSettled(item)) return item.manualSettled ? "已平账（手动）" : "已平账";
+  if (isSettled(item)) return item.manualSettled ? "手动平账" : "已平账";
   const toCents = (value: string) => validAmount(value) ? Math.round(Number(value) * 100) : 0;
   const diff = toCents(item.given) - toCents(item.received);
-  if (!diff) return item.gift ? "有礼物往来，确认后可手动平账" : "未平账";
+  if (!diff) return item.gift ? "待确认" : "未平账";
   const amount = (Math.abs(diff) / 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
-  return diff > 0 ? `对方待回礼 ¥${amount}` : `我待回礼 ¥${amount}`;
+  return diff > 0 ? `对方欠 ¥${amount}` : `我欠 ¥${amount}`;
 }
 
 function displayAmount(value: string) {
@@ -553,7 +551,7 @@ async function removeItem(id: string) {
       message: `确定将“${target.name}”的记录移入回收站吗？`,
       confirmButtonText: "删除",
       cancelButtonText: "取消",
-      className: "app-dialog danger",
+      className: "app-dialog app-dialog--danger",
     });
   } catch {
     return;
@@ -693,7 +691,7 @@ function resetAllData() {
     title: "重置数据",
     message: "确认清除所有账本的记录和回收站内容吗？此操作不可恢复。",
     confirmButtonText: "清除",
-    className: "app-dialog danger",
+    className: "app-dialog app-dialog--danger",
   }).then(async () => {
     try {
       await Promise.all([itemStorage.remove(), recycleStorage.remove()]);
@@ -1048,19 +1046,18 @@ onUnmounted(() => {
 .record-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  padding: 16px 4px calc(16px + env(safe-area-inset-bottom));
+  gap: 10px;
+  padding: 12px 4px calc(16px + env(safe-area-inset-bottom));
 }
 
 .ledger-card {
   display: grid;
-  gap: 12px;
   min-width: 0;
-  padding: 16px;
+  padding: 10px 14px 4px;
   border: 1px solid var(--divider);
-  border-radius: 18px;
+  border-radius: 14px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(20, 40, 62, 0.04), 0 6px 16px rgba(20, 40, 62, 0.05);
+  box-shadow: 0 1px 2px rgba(20, 40, 62, 0.04), 0 4px 12px rgba(20, 40, 62, 0.04);
 }
 
 .person-head {
@@ -1068,15 +1065,17 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--divider);
 }
 
 .ledger-card h2 {
   min-width: 0;
   margin: 0;
   color: var(--text-strong);
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 700;
-  line-height: 28px;
+  line-height: 26px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1085,18 +1084,16 @@ onUnmounted(() => {
 .add-exchange {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   flex: 0 0 auto;
-  height: 28px;
+  height: 26px;
   margin-left: auto;
-  padding: 0 10px;
-  border: 1px solid var(--accent-border);
-  border-radius: 999px;
-  background: var(--header-icon-bg);
+  padding: 0 2px 0 8px;
+  border: 0;
+  background: transparent;
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
-  transition: opacity 0.15s ease;
 }
 
 .add-exchange .el-icon {
@@ -1104,16 +1101,21 @@ onUnmounted(() => {
 }
 
 .add-exchange:active {
-  opacity: 0.6;
+  opacity: 0.5;
 }
 
 .exchange-swipe {
-  border-radius: 12px;
+  border-radius: 8px;
+}
+
+.exchange-swipe + .exchange-swipe .exchange {
+  border-top: 1px dashed var(--divider);
 }
 
 .exchange {
   display: grid;
-  gap: 8px;
+  gap: 2px;
+  padding: 8px 0;
   background: var(--surface);
   cursor: pointer;
 }
@@ -1128,14 +1130,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
-  padding: 0 2px;
 }
 
 .exchange-note {
   color: var(--text-subtle);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 18px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1162,51 +1163,43 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.exchange-body {
-  overflow: hidden;
-  border: 1px solid var(--divider);
-  border-radius: 12px;
-  background: var(--surface-soft);
-}
-
 .amounts {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
   margin: 0;
-  padding: 12px 0;
 }
 
 .amount {
-  display: grid;
-  align-content: start;
-  gap: 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
-  padding: 0 14px;
-}
-
-.amount + .amount {
-  border-left: 1px solid var(--divider);
 }
 
 .amount dt {
+  flex: 0 0 auto;
   color: var(--text-muted);
   font-size: 12px;
-  line-height: 18px;
 }
 
 .amount dd {
+  min-width: 0;
   margin: 0;
   color: var(--text-strong);
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 700;
-  line-height: 26px;
-  overflow-wrap: anywhere;
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
 .amount dd small {
-  margin-right: 2px;
-  font-size: 12px;
+  margin-right: 1px;
+  font-size: 11px;
   font-weight: 600;
   opacity: 0.55;
 }
@@ -1222,26 +1215,15 @@ onUnmounted(() => {
 }
 
 .balance-hint {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  padding: 8px 14px;
-  border-top: 1px solid var(--divider);
+  justify-self: end;
+  padding: 2px 8px;
+  border-radius: 999px;
   background: var(--warning-bg);
   color: var(--warning-text);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 18px;
-}
-
-.balance-hint::before {
-  content: "";
-  flex: 0 0 auto;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
+  white-space: nowrap;
 }
 
 .exchange.settled .amount dd {
@@ -1250,9 +1232,8 @@ onUnmounted(() => {
 }
 
 .exchange.settled .balance-hint {
-  background: var(--surface);
+  background: var(--surface-muted);
   color: var(--text-muted);
-  font-weight: 500;
 }
 
 /* 空状态 */
@@ -1678,7 +1659,7 @@ onUnmounted(() => {
   }
 
   .amount dd {
-    font-size: 17px;
+    font-size: 15px;
   }
 
   .recycle-item {
