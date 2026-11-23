@@ -62,7 +62,9 @@
         <article v-for="[name, entries] in groupedItems" :key="name" class="ledger-card">
           <header class="person-head">
             <h2>{{ name }}</h2>
-            <button type="button" class="add-exchange" :aria-label="`给${name}再记一笔`" @click="openEditor(undefined, name)">记一笔</button>
+            <button type="button" class="add-exchange" :aria-label="`给${name}再记一笔`" @click="openEditor(undefined, name)">
+              <el-icon><Plus /></el-icon>记一笔
+            </button>
           </header>
           <SwipeDeleteRow v-for="item in entries" :key="item.id" class="exchange-swipe" @remove="removeItem(item.id)">
             <div class="exchange" :class="{ settled: isSettled(item) }" role="button" tabindex="0"
@@ -76,17 +78,19 @@
                   <span>{{ item.gift }}</span>
                 </span>
               </div>
-              <dl class="amounts">
-                <div class="amount given" :class="{ empty: !item.given }">
-                  <dt>送出</dt>
-                  <dd><template v-if="item.given"><small>¥</small>{{ displayAmount(item.given) }}</template><template v-else>—</template></dd>
-                </div>
-                <div class="amount received" :class="{ empty: !item.received }">
-                  <dt>收到</dt>
-                  <dd><template v-if="item.received"><small>¥</small>{{ displayAmount(item.received) }}</template><template v-else>—</template></dd>
-                </div>
-                <p v-if="balanceHint(item)" class="balance-hint">{{ balanceHint(item) }}</p>
-              </dl>
+              <div class="exchange-body">
+                <dl class="amounts">
+                  <div class="amount given" :class="{ empty: !item.given }">
+                    <dt>送出</dt>
+                    <dd><template v-if="item.given"><small>¥</small>{{ displayAmount(item.given) }}</template><template v-else>—</template></dd>
+                  </div>
+                  <div class="amount received" :class="{ empty: !item.received }">
+                    <dt>收到</dt>
+                    <dd><template v-if="item.received"><small>¥</small>{{ displayAmount(item.received) }}</template><template v-else>—</template></dd>
+                  </div>
+                </dl>
+                <p class="balance-hint">{{ balanceHint(item) }}</p>
+              </div>
             </div>
           </SwipeDeleteRow>
         </article>
@@ -454,10 +458,10 @@ function isSettled(item: SettlementFields) {
 }
 
 function balanceHint(item: LedgerItem) {
-  if (isSettled(item)) return "";
+  if (isSettled(item)) return item.manualSettled ? "已平账（手动）" : "已平账";
   const toCents = (value: string) => validAmount(value) ? Math.round(Number(value) * 100) : 0;
   const diff = toCents(item.given) - toCents(item.received);
-  if (!diff) return item.gift ? "有礼物往来，确认后可手动平账" : "";
+  if (!diff) return item.gift ? "有礼物往来，确认后可手动平账" : "未平账";
   const amount = (Math.abs(diff) / 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   return diff > 0 ? `对方待回礼 ¥${amount}` : `我待回礼 ¥${amount}`;
 }
@@ -763,13 +767,13 @@ onUnmounted(() => {
   z-index: 20;
   margin: 0 -12px;
   padding-top: env(safe-area-inset-top);
-  background-color: var(--page-bg);
-  border-bottom: 1px solid transparent;
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  background-color: var(--surface);
+  border-bottom: 1px solid var(--divider);
+  box-shadow: 0 1px 2px rgba(20, 40, 62, 0.03);
+  transition: box-shadow 0.2s ease;
 }
 
 .sticky-panel.raised {
-  border-bottom-color: var(--divider);
   box-shadow: var(--header-shadow);
 }
 
@@ -878,7 +882,7 @@ onUnmounted(() => {
   height: 40px;
   border: 1px solid var(--divider);
   border-radius: 12px;
-  background: var(--surface);
+  background: var(--surface-soft);
   color: var(--accent);
   font-size: 18px;
   transition: background-color 0.15s ease, transform 0.15s ease;
@@ -907,12 +911,13 @@ onUnmounted(() => {
   border: 1px solid var(--divider);
   border-radius: 14px;
   color: var(--text-muted);
-  background: var(--surface);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  background: var(--surface-soft);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
 .search-box:focus-within {
   border-color: var(--accent);
+  background: var(--surface);
   color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
@@ -990,7 +995,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px;
-  margin: 0 var(--toolbar-inset) 8px;
+  margin: 0 var(--toolbar-inset) 12px;
   padding: 3px;
   border-radius: 12px;
   background: var(--surface-muted);
@@ -1043,20 +1048,19 @@ onUnmounted(() => {
 .record-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  padding: 6px 4px calc(16px + env(safe-area-inset-bottom));
+  gap: 12px;
+  padding: 16px 4px calc(16px + env(safe-area-inset-bottom));
 }
 
 .ledger-card {
   display: grid;
+  gap: 12px;
   min-width: 0;
-  padding: 4px 14px 6px;
+  padding: 16px;
+  border: 1px solid var(--divider);
   border-radius: 18px;
   background: var(--surface);
-  box-shadow:
-    0 1px 2px rgba(20, 40, 62, 0.05),
-    0 4px 10px rgba(20, 40, 62, 0.05),
-    0 12px 24px rgba(20, 40, 62, 0.07);
+  box-shadow: 0 1px 2px rgba(20, 40, 62, 0.04), 0 6px 16px rgba(20, 40, 62, 0.05);
 }
 
 .person-head {
@@ -1064,45 +1068,52 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 12px 0 2px;
 }
 
 .ledger-card h2 {
   min-width: 0;
   margin: 0;
   color: var(--text-strong);
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 28px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .add-exchange {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   flex: 0 0 auto;
+  height: 28px;
   margin-left: auto;
-  padding: 4px 0 4px 8px;
-  border: 0;
-  background: transparent;
+  padding: 0 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--header-icon-bg);
   color: var(--accent);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+
+.add-exchange .el-icon {
+  font-size: 12px;
 }
 
 .add-exchange:active {
-  opacity: 0.5;
+  opacity: 0.6;
 }
 
 .exchange-swipe {
-  border-radius: 14px;
+  border-radius: 12px;
 }
 
 .exchange {
   display: grid;
-  gap: 6px;
-  padding: 8px 0;
+  gap: 8px;
   background: var(--surface);
   cursor: pointer;
 }
@@ -1117,12 +1128,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
   min-width: 0;
+  padding: 0 2px;
 }
 
 .exchange-note {
-  color: var(--text-muted);
-  font-size: 12px;
-  font-weight: 500;
+  color: var(--text-subtle);
+  font-size: 13px;
+  font-weight: 600;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1150,21 +1162,24 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.exchange-body {
+  overflow: hidden;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
 .amounts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  row-gap: 8px;
   margin: 0;
-  padding: 10px 0;
-  border-radius: 12px;
-  background: var(--surface-muted);
-  box-shadow: inset 0 1px 3px rgba(20, 40, 62, 0.08);
+  padding: 12px 0;
 }
 
 .amount {
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
   padding: 0 14px;
 }
@@ -1176,6 +1191,7 @@ onUnmounted(() => {
 .amount dt {
   color: var(--text-muted);
   font-size: 12px;
+  line-height: 18px;
 }
 
 .amount dd {
@@ -1183,13 +1199,13 @@ onUnmounted(() => {
   color: var(--text-strong);
   font-size: 18px;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 26px;
   overflow-wrap: anywhere;
   font-variant-numeric: tabular-nums;
 }
 
 .amount dd small {
-  margin-right: 1px;
+  margin-right: 2px;
   font-size: 12px;
   font-weight: 600;
   opacity: 0.55;
@@ -1205,42 +1221,38 @@ onUnmounted(() => {
   opacity: 0.45;
 }
 
-.exchange.settled .amount dd {
-  color: var(--text-muted);
-  font-weight: 600;
-  text-decoration: line-through;
-  text-decoration-thickness: 1.5px;
-  opacity: 0.6;
-}
-
 .balance-hint {
   display: flex;
   align-items: center;
   gap: 6px;
-  grid-column: 1 / -1;
   margin: 0;
-  padding: 0 14px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--divider);
+  background: var(--warning-bg);
   color: var(--warning-text);
   font-size: 12px;
   font-weight: 600;
+  line-height: 18px;
 }
 
 .balance-hint::before {
   content: "";
   flex: 0 0 auto;
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
 }
 
-.exchange.settled .amounts {
-  background: transparent;
-  box-shadow: inset 0 0 0 1px var(--divider);
+.exchange.settled .amount dd {
+  color: var(--text-muted);
+  font-weight: 600;
 }
 
-.exchange.settled .exchange-note {
+.exchange.settled .balance-hint {
+  background: var(--surface);
   color: var(--text-muted);
+  font-weight: 500;
 }
 
 /* 空状态 */
