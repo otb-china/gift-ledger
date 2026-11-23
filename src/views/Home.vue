@@ -11,7 +11,10 @@
                 <option v-for="book in books" :key="book.id" :value="book.id">{{ book.name }}</option>
               </select>
             </div>
-            <span>共 {{ visibleItems.length }} 条记录<template v-if="openTotal"> · {{ openTotal }} 条未平账</template></span>
+            <span v-if="visibleItems.length" class="brand-summary">
+              送出 <b>¥{{ totals.given }}</b> · 收到 <b class="in">¥{{ totals.received }}</b>
+            </span>
+            <span v-else>还没有记录</span>
           </div>
         </div>
         <div class="header-actions">
@@ -55,17 +58,6 @@
     </div>
 
     <main class="allergen-view">
-      <section v-if="visibleItems.length" class="summary-card" aria-label="合计">
-        <div>
-          <span>共送出</span>
-          <strong><small>¥</small>{{ totals.given }}</strong>
-        </div>
-        <div>
-          <span>共收到</span>
-          <strong><small>¥</small>{{ totals.received }}</strong>
-        </div>
-      </section>
-
       <section v-if="sortedItems.length" class="record-list" aria-label="礼帐记录">
         <article v-for="[name, entries] in groupedItems" :key="name" class="ledger-card">
           <header class="person-head">
@@ -86,13 +78,14 @@
               </div>
               <dl class="amounts">
                 <div class="amount given" :class="{ empty: !item.given }">
-                  <dt>我送出的礼金</dt>
+                  <dt>送出</dt>
                   <dd><template v-if="item.given"><small>¥</small>{{ displayAmount(item.given) }}</template><template v-else>—</template></dd>
                 </div>
                 <div class="amount received" :class="{ empty: !item.received }">
-                  <dt>我收到的礼金</dt>
+                  <dt>收到</dt>
                   <dd><template v-if="item.received"><small>¥</small>{{ displayAmount(item.received) }}</template><template v-else>—</template></dd>
                 </div>
+                <p v-if="balanceHint(item)" class="balance-hint">{{ balanceHint(item) }}</p>
               </dl>
             </div>
           </SwipeDeleteRow>
@@ -314,7 +307,6 @@ const totals = computed(() => {
   const format = (cents: number) => (cents / 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   return { given: format(sumCents("given")), received: format(sumCents("received")) };
 });
-const openTotal = computed(() => visibleItems.value.filter(item => !isSettled(item)).length);
 const sortedItems = computed(() => keywordMatches.value
   .filter(item => statusFilter.value === "all" || isSettled(item) === (statusFilter.value === "settled"))
   .sort((a, b) => Number(isSettled(a)) - Number(isSettled(b)) || b.updatedAt.localeCompare(a.updatedAt)));
@@ -459,6 +451,15 @@ function readAmount(value: unknown) {
 function isSettled(item: SettlementFields) {
   return item.manualSettled || (!item.gift.trim() && validAmount(item.received) &&
     validAmount(item.given) && Number(item.received) === Number(item.given));
+}
+
+function balanceHint(item: LedgerItem) {
+  if (isSettled(item)) return "";
+  const toCents = (value: string) => validAmount(value) ? Math.round(Number(value) * 100) : 0;
+  const diff = toCents(item.given) - toCents(item.received);
+  if (!diff) return item.gift ? "有礼物往来，确认后可手动平账" : "";
+  const amount = (Math.abs(diff) / 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  return diff > 0 ? `对方待回礼 ¥${amount}` : `我待回礼 ¥${amount}`;
 }
 
 function displayAmount(value: string) {
@@ -854,6 +855,15 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
+.brand-summary b {
+  color: var(--text-strong);
+  font-weight: 700;
+}
+
+.brand-summary b.in {
+  color: var(--accent);
+}
+
 .header-actions {
   display: flex;
   align-items: center;
@@ -955,7 +965,7 @@ onUnmounted(() => {
   border-radius: 14px;
   color: #ffffff;
   background: var(--submit-btn-bg);
-  box-shadow: var(--submit-btn-shadow);
+  box-shadow: 0 2px 6px rgba(20, 40, 62, 0.12);
   font-size: 15px;
   font-weight: 700;
   white-space: nowrap;
@@ -977,10 +987,10 @@ onUnmounted(() => {
 
 /* 筛选 */
 .filter-bar {
-  display: inline-flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px;
-  max-width: calc(100% - 2 * var(--toolbar-inset));
-  margin: 0 var(--toolbar-inset) 12px;
+  margin: 0 var(--toolbar-inset) 8px;
   padding: 3px;
   border-radius: 12px;
   background: var(--surface-muted);
@@ -995,7 +1005,7 @@ onUnmounted(() => {
 .filter-chip {
   display: inline-flex;
   align-items: center;
-  flex: 0 0 auto;
+  justify-content: center;
   gap: 6px;
   height: 32px;
   padding: 0 14px;
@@ -1029,55 +1039,12 @@ onUnmounted(() => {
   color: #ffffff;
 }
 
-/* 合计 */
-.summary-card {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 14px 4px 0;
-  padding: 16px 0;
-  border-radius: 18px;
-  background: var(--submit-btn-bg);
-  box-shadow: var(--submit-btn-shadow);
-  color: #ffffff;
-}
-
-.summary-card > div {
-  min-width: 0;
-  padding: 0 18px;
-}
-
-.summary-card > div + div {
-  border-left: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.summary-card span {
-  display: block;
-  font-size: 12px;
-  opacity: 0.8;
-}
-
-.summary-card strong {
-  display: block;
-  margin-top: 4px;
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-
-.summary-card small {
-  margin-right: 2px;
-  font-size: 14px;
-  font-weight: 600;
-  opacity: 0.75;
-}
-
 /* 记录卡片 */
 .record-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-  padding: 14px 4px calc(16px + env(safe-area-inset-bottom));
+  padding: 6px 4px calc(16px + env(safe-area-inset-bottom));
 }
 
 .ledger-card {
@@ -1097,7 +1064,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 10px 0 6px;
+  padding: 12px 0 2px;
 }
 
 .ledger-card h2 {
@@ -1129,17 +1096,13 @@ onUnmounted(() => {
 }
 
 .exchange-swipe {
-  border-radius: 0;
-}
-
-.exchange-swipe + .exchange-swipe {
-  border-top: 1px solid var(--divider);
+  border-radius: 14px;
 }
 
 .exchange {
   display: grid;
   gap: 6px;
-  padding: 12px 0;
+  padding: 8px 0;
   background: var(--surface);
   cursor: pointer;
 }
@@ -1157,9 +1120,9 @@ onUnmounted(() => {
 }
 
 .exchange-note {
-  color: var(--text-strong);
-  font-size: 14px;
-  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1190,6 +1153,7 @@ onUnmounted(() => {
 .amounts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  row-gap: 8px;
   margin: 0;
   padding: 10px 0;
   border-radius: 12px;
@@ -1247,6 +1211,32 @@ onUnmounted(() => {
   text-decoration: line-through;
   text-decoration-thickness: 1.5px;
   opacity: 0.6;
+}
+
+.balance-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0 14px;
+  color: var(--warning-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.balance-hint::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.exchange.settled .amounts {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--divider);
 }
 
 .exchange.settled .exchange-note {
@@ -1673,14 +1663,6 @@ onUnmounted(() => {
 
   .record-list {
     padding-inline: 0;
-  }
-
-  .summary-card {
-    margin-inline: 0;
-  }
-
-  .summary-card strong {
-    font-size: 21px;
   }
 
   .amount dd {
