@@ -1,12 +1,16 @@
-export interface LedgerItem {
+export interface LedgerBook {
   id: string;
   name: string;
-  recordedAt: string;
+}
+
+export interface LedgerItem {
+  bookId: string;
+  id: string;
+  name: string;
   received: string;
   given: string;
   gift: string;
   manualSettled: boolean;
-  note: string;
   updatedAt: string;
 }
 
@@ -15,6 +19,7 @@ export interface DeletedLedgerItem extends LedgerItem {
 }
 
 export interface LedgerBackupData {
+  books?: unknown;
   items?: unknown;
   deletedItems?: unknown;
 }

@@ -1,12 +1,17 @@
 <template>
   <div class="home-page" :style="themeStyle">
-    <div class="sticky-panel">
+    <div class="sticky-panel" :class="{ raised: showScrollTop }">
       <header class="page-header">
         <div class="brand">
           <img class="brand-logo" :src="logoUrl" alt="" aria-hidden="true" />
           <div class="brand-text">
-            <h1>礼帐</h1>
-            <span>共 {{ items.length }} 条记录<template v-if="openTotal"> · {{ openTotal }} 条未平账</template></span>
+            <div class="book-title">
+              <h1>礼帐</h1>
+              <select v-if="books.length > 1" v-model="activeBook" class="book-select" aria-label="切换账本">
+                <option v-for="book in books" :key="book.id" :value="book.id">{{ book.name }}</option>
+              </select>
+            </div>
+            <span>共 {{ visibleItems.length }} 条记录<template v-if="openTotal"> · {{ openTotal }} 条未平账</template></span>
           </div>
         </div>
         <div class="header-actions">
@@ -22,7 +27,7 @@
       <section class="search-section" aria-label="搜索和录入">
         <label class="search-box">
           <el-icon><Search /></el-icon>
-          <input v-model.trim="keyword" type="search" placeholder="搜索姓名、礼物或备注" aria-label="搜索姓名、礼物或备注" />
+          <input v-model.trim="keyword" type="search" placeholder="搜索姓名或礼物" aria-label="搜索姓名或礼物" />
           <button v-if="keyword" class="search-clear" type="button" aria-label="清空搜索" @click="keyword = ''">
             <el-icon><CircleCloseFilled /></el-icon>
           </button>
@@ -33,7 +38,7 @@
         </button>
       </section>
 
-      <nav v-if="items.length" class="filter-bar" aria-label="按平账状态筛选">
+      <nav v-if="visibleItems.length" class="filter-bar" aria-label="按平账状态筛选">
         <button
           v-for="filter in filterOptions"
           :key="filter.key"
@@ -51,38 +56,48 @@
 
     <main class="allergen-view">
       <section v-if="sortedItems.length" class="record-list" aria-label="礼帐记录">
-        <article
-          v-for="item in sortedItems"
-          :key="item.id"
-          class="allergen-card"
-          tabindex="0"
-          @click="openEditor(item)"
-          @keydown.enter="openEditor(item)"
-        >
-          <div class="card-title-row">
-            <h2>{{ item.name }}</h2>
-            <span class="card-unrated" :class="{ settled: isSettled(item) }">{{ statusLabel(item) }}</span>
-          </div>
-          <dl class="amounts">
-            <div><dt>收礼</dt><dd>{{ item.received ? item.received + " 元" : "—" }}</dd></div>
-            <div><dt>随礼</dt><dd>{{ item.given ? item.given + " 元" : "—" }}</dd></div>
-          </dl>
-          <p v-if="item.gift" class="card-note">礼物 · {{ item.gift }}</p>
-          <p v-if="item.note" class="card-note">{{ item.note }}</p>
-        </article>
+        <SwipeDeleteRow v-for="item in sortedItems" :key="item.id" @remove="removeItem(item.id)">
+          <article
+            class="ledger-card"
+            :class="{ settled: isSettled(item) }"
+            tabindex="0"
+            role="button"
+            @click="openEditor(item)"
+            @keydown.space.prevent="openEditor(item)"
+            @keydown.delete.prevent="removeItem(item.id)"
+            @keydown.enter="openEditor(item)"
+          >
+            <div class="card-head">
+              <div class="card-name">
+                <h2>{{ item.name }}</h2>
+                <p v-if="item.gift" class="card-gift">
+                  <el-icon><Present /></el-icon>
+                  <span>{{ item.gift }}</span>
+                </p>
+              </div>
+              <span class="status-badge">{{ statusLabel(item) }}</span>
+            </div>
+            <dl class="amounts">
+              <div class="amount given" :class="{ empty: !item.given }">
+                <dt>随礼</dt>
+                <dd><template v-if="item.given"><small>¥</small>{{ item.given }}</template><template v-else>—</template></dd>
+              </div>
+              <div class="amount received" :class="{ empty: !item.received }">
+                <dt>收礼</dt>
+                <dd><template v-if="item.received"><small>¥</small>{{ item.received }}</template><template v-else>—</template></dd>
+              </div>
+            </dl>
+          </article>
+        </SwipeDeleteRow>
       </section>
 
       <div v-else class="empty-state">
         <span class="empty-icon">
-          <el-icon><component :is="items.length ? Search : EditPen" /></el-icon>
+          <el-icon><component :is="visibleItems.length ? Search : Notebook" /></el-icon>
         </span>
-        <strong>{{ items.length ? "没有匹配的记录" : "还没有记录" }}</strong>
-        <span>{{ items.length ? "换个关键词或筛选条件试试。" : "记下第一笔人情往来。" }}</span>
-        <button v-if="!items.length" class="create-button" type="button" @click="openEditor()">
-          <el-icon><Plus /></el-icon>
-          录入第一条
-        </button>
-        <button v-else class="ghost-button" type="button" @click="resetFilters">清除筛选</button>
+        <strong>{{ visibleItems.length ? "没有匹配的记录" : "还没有记录" }}</strong>
+        <span v-if="!visibleItems.length" class="empty-desc">点击“录入”记下第一笔人情往来</span>
+        <button v-else class="text-button" type="button" @click="resetFilters">清除筛选</button>
       </div>
     </main>
 
@@ -91,7 +106,7 @@
         <header class="editor-head">
           <div>
             <strong>{{ editingItemId ? "编辑记录" : "新增记录" }}</strong>
-            <span>无礼物且收礼与随礼金额相同时自动平账</span>
+            <span>无礼物且随礼与收礼金额相同时自动平账</span>
           </div>
           <button class="editor-close" type="button" aria-label="关闭" @click="editorPopup = false">
             <el-icon><Close /></el-icon>
@@ -103,55 +118,29 @@
           <input v-model.trim="itemForm.name" class="simple-input" placeholder="填写往来人姓名" />
         </label>
 
-        <label class="field-row">
-          <span>日期</span>
-          <input
-            v-model="itemForm.recordedAt"
-            class="simple-input date-input"
-            type="date"
-            aria-label="选择录入日期"
-          />
-        </label>
-
-        <label class="field-row">
-          <span>收礼（元）</span>
-          <input v-model.trim="itemForm.received" class="simple-input" inputmode="decimal" placeholder="0.00" />
-        </label>
-        <label class="field-row">
-          <span>随礼（元）</span>
-          <input v-model.trim="itemForm.given" class="simple-input" inputmode="decimal" placeholder="0.00" />
-        </label>
+        <div class="field-pair">
+          <label class="field-row">
+            <span>随礼（元）</span>
+            <input v-model.trim="itemForm.given" class="simple-input" inputmode="decimal" placeholder="0.00" />
+          </label>
+          <label class="field-row">
+            <span>收礼（元）</span>
+            <input v-model.trim="itemForm.received" class="simple-input" inputmode="decimal" placeholder="0.00" />
+          </label>
+        </div>
         <label class="field-row">
           <span>礼物</span>
           <input v-model.trim="itemForm.gift" class="simple-input" placeholder="有礼物时填写" />
         </label>
-        <label class="field-row">
-          <span>手动平账</span>
-          <input v-model="itemForm.manualSettled" type="checkbox" />
-          <span>{{ statusLabel(itemForm) }}</span>
+        <label class="toggle-row">
+          <span class="toggle-text">
+            <strong>手动平账</strong>
+            <em>当前状态：{{ statusLabel(itemForm) }}</em>
+          </span>
+          <input v-model="itemForm.manualSettled" class="switch" type="checkbox" />
         </label>
 
-        <label class="field-row">
-          <span>备注<em>选填</em></span>
-          <textarea
-            v-model.trim="itemForm.note"
-            class="simple-input note-input"
-            rows="3"
-            placeholder="填写往来事由"
-          />
-        </label>
-
-        <div class="simple-actions" :class="{ 'has-recycle': editingItemId }">
-          <button
-            v-if="editingItemId"
-            class="recycle-btn"
-            type="button"
-            aria-label="移入回收站"
-            title="移入回收站"
-            @click="removeItem(editingItemId)"
-          >
-            <el-icon aria-hidden="true"><Delete /></el-icon>
-          </button>
+        <div class="simple-actions">
           <button class="confirm-btn" type="submit">保存</button>
         </div>
       </form>
@@ -162,7 +151,8 @@
       :theme-options="themeOptions"
       :current-theme="currentTheme"
       :current-theme-name="currentThemeOption.name"
-      :recycle-count="deletedItems.length"
+      :recycle-count="visibleDeleted.length"
+      @manage-books="openBookManager"
       @set-theme="setTheme"
       @export="exportAllData"
       @open-import="openImportExport"
@@ -179,11 +169,11 @@
           </div>
         </div>
 
-        <div v-if="deletedItems.length" class="recycle-list">
-          <div v-for="item in deletedItems" :key="item.id" class="recycle-item">
+        <div v-if="visibleDeleted.length" class="recycle-list">
+          <div v-for="item in visibleDeleted" :key="item.id" class="recycle-item">
             <div>
               <strong>{{ item.name }}</strong>
-              <span>录入于 {{ item.recordedAt }} · {{ getRecycleDaysLeft(item) }} 天后清除</span>
+              <span>{{ getRecycleDaysLeft(item) }} 天后清除</span>
             </div>
             <div class="recycle-actions">
               <button type="button" @click="restoreDeletedItem(item.id)">恢复</button>
@@ -194,8 +184,28 @@
 
         <div v-else class="empty-state compact">
           <strong>回收站为空</strong>
-          <span>移除的记录会在这里保留一周。</span>
+          <span class="empty-desc">移除的记录会在这里保留一周。</span>
         </div>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="bookManager" position="bottom" round>
+      <div class="popup-body">
+        <div class="popup-head">
+          <div>
+            <h3>账本管理</h3>
+            <p>改名后点击“改名”保存，删除账本会同时清除其记录。</p>
+          </div>
+        </div>
+        <form v-for="book in books" :key="book.id" class="book-row" @submit.prevent="renameBook(book)">
+          <input v-model.trim="bookNames[book.id]" class="simple-input" aria-label="账本名称" maxlength="24" required />
+          <button class="ghost-button" type="submit">改名</button>
+          <button v-if="books.length > 1" class="ghost-button" type="button" @click="deleteBook(book)">删除</button>
+        </form>
+        <form class="book-row book-row-new" @submit.prevent="addBook">
+          <input v-model.trim="newBookName" class="simple-input" placeholder="新账本名称" aria-label="新账本名称" maxlength="24" required />
+          <button class="create-button small" type="submit">新增</button>
+        </form>
       </div>
     </van-popup>
 
@@ -215,14 +225,15 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import dayjs from "dayjs";
 import { showConfirmDialog, showToast } from "vant";
-import { CircleCloseFilled, Close, Delete, EditPen, Plus, Search, Setting, Top } from "@element-plus/icons-vue";
+import { CircleCloseFilled, Close, Notebook, Plus, Present, Search, Setting, Top } from "@element-plus/icons-vue";
 import ImportDataPopup from "@/components/ImportDataPopup.vue";
+import SwipeDeleteRow from "@/components/SwipeDeleteRow.vue";
 import SettingsPopup from "@/components/SettingsPopup.vue";
 import { DEFAULT_THEME, isThemeKey, themeOptions } from "@/config/themes";
 import { storageKeys } from "@/utils/toolStorage";
 import { LStorage, reportSaveError } from "@/utils/localStorage.ts";
 import type { ThemeKey } from "@/config/themes";
-import type { DeletedLedgerItem, LedgerBackupData, LedgerItem } from "@/types/tool";
+import type { DeletedLedgerItem, LedgerBackupData, LedgerBook, LedgerItem } from "@/types/tool";
 import logoUrl from "@/assets/ledger-icon.svg";
 
 const SCROLL_TOP_THRESHOLD = 240;
@@ -241,13 +252,21 @@ const showScrollTop = ref(false);
 const currentTheme = ref<ThemeKey>(DEFAULT_THEME);
 const items = ref<LedgerItem[]>([]);
 const deletedItems = ref<DeletedLedgerItem[]>([]);
+const personalBook = { id: "personal", name: "个人" };
+const books = ref<LedgerBook[]>([personalBook]);
+const activeBook = ref(personalBook.id);
+const visibleItems = computed(() => items.value.filter(item => item.bookId === activeBook.value));
+const visibleDeleted = computed(() => deletedItems.value.filter(item => item.bookId === activeBook.value));
+const bookManager = ref(false);
+const bookNames = ref<Record<string, string>>({});
+const newBookName = ref("");
 const keyword = ref("");
 const statusFilter = ref<FilterKey>("all");
 const settingsPopup = ref(false);
 const recyclePopup = ref(false);
 const editorPopup = ref(false);
 const editingItemId = ref("");
-const itemForm = reactive({ name: "", recordedAt: formatDate(new Date()), note: "", received: "", given: "", gift: "", manualSettled: false });
+const itemForm = reactive({ name: "", received: "", given: "", gift: "", manualSettled: false });
 const importExportInfo = ref({ show: false });
 const importInfo = ref({ dataStr: "", fileName: "" });
 
@@ -261,38 +280,94 @@ const currentThemeOption = computed(() => {
 const themeStyle = computed(() => currentThemeOption.value.variables);
 const keywordMatches = computed(() => {
   const query = keyword.value.trim().toLowerCase();
-  if (!query) return items.value;
-  return items.value.filter((item) =>
-    item.name.toLowerCase().includes(query) || item.gift.toLowerCase().includes(query) || item.note.toLowerCase().includes(query),
+  if (!query) return visibleItems.value;
+  return visibleItems.value.filter((item) =>
+    item.name.toLowerCase().includes(query) || item.gift.toLowerCase().includes(query),
   );
 });
 const filterCounts = computed(() => {
   const settled = keywordMatches.value.filter(isSettled).length;
   return { all: keywordMatches.value.length, open: keywordMatches.value.length - settled, settled };
 });
-const openTotal = computed(() => items.value.filter(item => !isSettled(item)).length);
+const openTotal = computed(() => visibleItems.value.filter(item => !isSettled(item)).length);
 const sortedItems = computed(() => keywordMatches.value
   .filter(item => statusFilter.value === "all" || isSettled(item) === (statusFilter.value === "settled"))
-  .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt)));
+  .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
 
 watch(items, saveItems, { deep: true });
 watch(deletedItems, saveDeletedItems, { deep: true });
 
+const bookStorage = LStorage.new(storageKeys.books);
+const activeStorage = LStorage.new(storageKeys.activeBook);
+watch(books, value => { void bookStorage.setter(value).catch(reportSaveError); });
+watch(activeBook, value => {
+  resetFilters();
+  void activeStorage.setter(value).catch(reportSaveError);
+});
+
+function readBooks(value: unknown): LedgerBook[] {
+  if (value === undefined || value === null) return [{ ...personalBook }];
+  if (!Array.isArray(value) || !value.length || value.some(book =>
+    typeof book?.id !== "string" || !book.id || typeof book.name !== "string" || !book.name.trim()
+  ) || new Set(value.map(book => book.id)).size !== value.length) throw new Error("无效的账本");
+  return value.map(({ id, name }) => ({ id, name }));
+}
+
+function openBookManager() {
+  settingsPopup.value = false;
+  bookNames.value = Object.fromEntries(books.value.map(book => [book.id, book.name]));
+  newBookName.value = "";
+  bookManager.value = true;
+}
+
+function validBookName(name: string, id?: string) {
+  if (name && !books.value.some(book => book.id !== id && book.name === name)) return true;
+  showToast("请填写不同的账本名称");
+  return false;
+}
+
+function addBook() {
+  const name = newBookName.value;
+  if (!validBookName(name)) return;
+  const id = createId("book");
+  books.value = [...books.value, { id, name }];
+  bookNames.value[id] = name;
+  newBookName.value = "";
+  activeBook.value = id;
+}
+
+function renameBook(book: LedgerBook) {
+  const name = bookNames.value[book.id] ?? "";
+  if (!validBookName(name, book.id)) return;
+  books.value = books.value.map(entry => entry.id === book.id ? { ...book, name } : entry);
+  showToast("账本名称已保存");
+}
+
+function deleteBook(book: LedgerBook) {
+  if (books.value.length < 2) return;
+  showConfirmDialog({ title: "删除账本", message: `永久删除“${book.name}”及其全部记录和回收站内容？` }).then(() => {
+    books.value = books.value.filter(entry => entry.id !== book.id);
+    if (activeBook.value === book.id) activeBook.value = books.value[0]!.id;
+    items.value = items.value.filter(item => item.bookId !== book.id);
+    deletedItems.value = deletedItems.value.filter(item => item.bookId !== book.id);
+  }).catch(() => {});
+}
+
 function init() {
+  books.value = readBooks(bookStorage.getter());
+  const selected = activeStorage.getter();
+  activeBook.value = books.value.find(book => book.id === selected)?.id ?? books.value[0]!.id;
   const storedTheme = themeStorage.getter();
   currentTheme.value = isThemeKey(storedTheme) ? storedTheme : DEFAULT_THEME;
   items.value = normalizeItems(itemStorage.getter());
   deletedItems.value = purgeExpiredDeletedItems(normalizeDeletedItems(recycleStorage.getter()));
 }
 
-function formatDate(date: Date) {
-  return dayjs(date).format("YYYY-MM-DD");
-}
-
 function createItem(fields: typeof itemForm): LedgerItem {
   return {
     id: createId("item"),
     ...fields,
+    bookId: activeBook.value,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -309,12 +384,11 @@ function normalizeItems(value: unknown): LedgerItem[] {
     .map((item) => ({
       id: typeof item.id === "string" && item.id ? item.id : createId("item"),
       name: typeof item.name === "string" && item.name.trim() ? item.name.trim() : "未命名记录",
-      recordedAt: typeof item.recordedAt === "string" && item.recordedAt ? item.recordedAt : formatDate(new Date()),
+      bookId: item.bookId || personalBook.id,
       received: readAmount(item.received),
       given: readAmount(item.given),
       gift: typeof item.gift === "string" ? item.gift.trim() : "",
       manualSettled: item.manualSettled === true,
-      note: typeof item.note === "string" ? item.note.trim() : "",
       updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString(),
     }));
 }
@@ -381,8 +455,6 @@ function setTheme(theme: ThemeKey) {
 function openEditor(item?: LedgerItem) {
   editingItemId.value = item?.id || "";
   itemForm.name = item?.name || "";
-  itemForm.recordedAt = item?.recordedAt || formatDate(new Date());
-  itemForm.note = item?.note ?? "";
   itemForm.received = item?.received ?? "";
   itemForm.given = item?.given ?? "";
   itemForm.gift = item?.gift ?? "";
@@ -405,7 +477,6 @@ function saveItem() {
   const fields = {
     ...itemForm,
     name,
-    recordedAt: itemForm.recordedAt || formatDate(new Date()),
   };
 
   if (editingItemId.value) {
@@ -422,23 +493,27 @@ function saveItem() {
   showToast("已保存");
 }
 
-function removeItem(id: string) {
+async function removeItem(id: string) {
   const target = items.value.find((item) => item.id === id);
   if (!target) return;
-  showConfirmDialog({
-    title: "移入回收站",
-    message: `确认将“${target.name}”移入回收站吗？`,
-    width: "280px",
-  }).then(() => {
-    const deletedItem = {
-      ...target,
-      deletedAt: new Date().toISOString(),
-    };
-    items.value = items.value.filter((item) => item.id !== id);
-    deletedItems.value = [deletedItem, ...deletedItems.value.filter((item) => item.id !== id)];
-    if (editingItemId.value === id) editorPopup.value = false;
-    showToast("已移入回收站");
-  }).catch(() => {});
+  try {
+    await showConfirmDialog({
+      title: "删除记录",
+      message: `确定将“${target.name}”的记录移入回收站吗？`,
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+    });
+  } catch {
+    return;
+  }
+  const deletedItem = {
+    ...target,
+    deletedAt: new Date().toISOString(),
+  };
+  items.value = items.value.filter((item) => item.id !== id);
+  deletedItems.value = [deletedItem, ...deletedItems.value.filter((item) => item.id !== id)];
+  if (editingItemId.value === id) editorPopup.value = false;
+  showToast("已移入回收站");
 }
 
 function openRecycleBin() {
@@ -485,7 +560,7 @@ function openImportExport() {
 }
 
 function exportAllData() {
-  const backupText = JSON.stringify({ items: items.value, deletedItems: deletedItems.value }, null, 2);
+  const backupText = JSON.stringify({ books: books.value, items: items.value, deletedItems: deletedItems.value }, null, 2);
   const blob = new Blob([backupText], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   const downloadLink = document.createElement("a");
@@ -535,12 +610,19 @@ async function importData() {
     if (!Array.isArray(parsedData.items) || importedItems.length !== parsedData.items.length) {
       throw new Error("Invalid items");
     }
+    const importedBooks = readBooks(parsedData.books);
+    const bookIds = new Set(importedBooks.map(book => book.id));
+    const importedDeleted = normalizeDeletedItems(parsedData.deletedItems);
+    if ([...importedItems, ...importedDeleted].some(item => !bookIds.has(item.bookId))) throw new Error("未知的账本");
+    const mergedBooks = [...books.value, ...importedBooks.filter(book => !books.value.some(local => local.id === book.id))];
     const mergedItems = mergeImportedItems(importedItems);
-    const mergedDeletedItems = mergeImportedDeletedItems(normalizeDeletedItems(parsedData.deletedItems));
+    const mergedDeletedItems = mergeImportedDeletedItems(importedDeleted);
     await Promise.all([
+      bookStorage.setter(mergedBooks),
       itemStorage.setter(mergedItems),
       recycleStorage.setter(mergedDeletedItems),
     ]);
+    books.value = mergedBooks;
     items.value = mergedItems;
     deletedItems.value = mergedDeletedItems;
     importExportInfo.value.show = false;
@@ -557,7 +639,7 @@ async function importData() {
 function resetAllData() {
   showConfirmDialog({
     title: "提示",
-    message: "确认清除所有礼帐吗？",
+    message: "确认清除所有账本的记录和回收站内容吗？",
     width: "250px",
   }).then(async () => {
     try {
@@ -595,19 +677,12 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .home-page {
-  --level-none: #8a96a3;
-  --level-none-bg: rgba(138, 150, 163, 0.12);
-  --level-mild: #b98a12;
-  --level-mild-bg: rgba(242, 184, 48, 0.16);
-  --level-moderate: #d06a1e;
-  --level-moderate-bg: rgba(240, 134, 54, 0.15);
-  --level-severe: #cc4b42;
-  --level-severe-bg: rgba(222, 86, 74, 0.13);
   min-height: 100vh;
   min-height: 100dvh;
   padding: 0 12px;
   background-color: var(--page-bg);
   color: var(--text-main);
+  font-feature-settings: "tnum";
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -622,7 +697,7 @@ onUnmounted(() => {
 }
 
 .home-page button:focus-visible,
-.allergen-card:focus-visible {
+.ledger-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -632,6 +707,7 @@ onUnmounted(() => {
   margin: 0 auto;
 }
 
+/* 顶部 */
 .sticky-panel {
   --toolbar-inset: max(16px, calc((100% - 780px) / 2 + 4px));
   position: sticky;
@@ -640,6 +716,13 @@ onUnmounted(() => {
   margin: 0 -12px;
   padding-top: env(safe-area-inset-top);
   background-color: var(--page-bg);
+  border-bottom: 1px solid transparent;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.sticky-panel.raised {
+  border-bottom-color: var(--divider);
+  box-shadow: var(--header-shadow);
 }
 
 .page-header {
@@ -647,39 +730,76 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 12px var(--toolbar-inset) 10px;
+  padding: 14px var(--toolbar-inset) 12px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
 }
 
 .brand-logo {
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
-  border-radius: 11px;
-  box-shadow: 0 4px 12px rgba(38, 56, 88, 0.1);
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  box-shadow: 0 6px 16px rgba(38, 56, 88, 0.12);
 }
 
 .brand-text {
   min-width: 0;
 }
 
+.book-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.book-title h1 {
+  flex-shrink: 0;
+}
+
 .brand-text h1 {
   margin: 0;
   color: var(--text-strong);
   font-size: 22px;
+  font-weight: 800;
   line-height: 1.2;
-  letter-spacing: -0.01em;
+  letter-spacing: 0.02em;
 }
 
-.brand-text span {
+.book-select {
+  min-width: 0;
+  max-width: 9em;
+  height: 26px;
+  padding: 0 24px 0 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  outline: 0;
+  background:
+    linear-gradient(45deg, transparent 50%, var(--accent) 50%) right 12px center / 5px 5px no-repeat,
+    linear-gradient(135deg, var(--accent) 50%, transparent 50%) right 8px center / 5px 5px no-repeat,
+    var(--header-icon-bg);
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.book-select:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+
+.brand-text > span {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
   color: var(--text-muted);
   font-size: 12px;
   white-space: nowrap;
@@ -699,10 +819,9 @@ onUnmounted(() => {
   justify-content: center;
   width: 40px;
   height: 40px;
-  border: 0;
+  border: 1px solid var(--divider);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 2px 10px rgba(20, 40, 62, 0.06);
   color: var(--accent);
   font-size: 18px;
   transition: background-color 0.15s ease, transform 0.15s ease;
@@ -710,8 +829,10 @@ onUnmounted(() => {
 
 .header-icon:active {
   transform: scale(0.94);
+  background: var(--header-icon-bg);
 }
 
+/* 搜索与录入 */
 .search-section {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -725,19 +846,17 @@ onUnmounted(() => {
   gap: 8px;
   min-width: 0;
   min-height: 44px;
-  padding: 0 6px 0 12px;
-  border: 1px solid transparent;
-  border-radius: 12px;
+  padding: 0 6px 0 14px;
+  border: 1px solid var(--divider);
+  border-radius: 14px;
   color: var(--text-muted);
   background: var(--surface);
-  box-shadow: 0 2px 10px rgba(20, 40, 62, 0.06);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .search-box:focus-within {
   border-color: var(--accent);
   color: var(--accent);
-  background: var(--surface);
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
@@ -748,8 +867,8 @@ onUnmounted(() => {
   outline: 0;
   color: var(--text-main);
   background: transparent;
+  font-family: inherit;
   font-size: 16px;
-  font-weight: 500;
   -webkit-appearance: none;
   appearance: none;
 }
@@ -760,7 +879,7 @@ onUnmounted(() => {
 
 .search-box input::placeholder {
   color: var(--text-muted);
-  opacity: 0.8;
+  opacity: 0.75;
 }
 
 .search-clear {
@@ -775,6 +894,7 @@ onUnmounted(() => {
   background: transparent;
   color: var(--text-muted);
   font-size: 16px;
+  opacity: 0.7;
 }
 
 .create-button {
@@ -783,9 +903,9 @@ onUnmounted(() => {
   justify-content: center;
   gap: 5px;
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 18px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 14px;
   color: #ffffff;
   background: var(--submit-btn-bg);
   box-shadow: var(--submit-btn-shadow);
@@ -795,15 +915,28 @@ onUnmounted(() => {
   transition: transform 0.15s ease, filter 0.15s ease;
 }
 
+.create-button.small {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  box-shadow: none;
+}
+
 .create-button:active {
   transform: scale(0.96);
   filter: brightness(0.95);
 }
 
+/* 筛选 */
 .filter-bar {
-  display: flex;
-  gap: 8px;
-  padding: 0 var(--toolbar-inset) 10px;
+  display: inline-flex;
+  gap: 2px;
+  max-width: calc(100% - 2 * var(--toolbar-inset));
+  margin: 0 var(--toolbar-inset) 12px;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--surface-muted);
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -818,35 +951,38 @@ onUnmounted(() => {
   flex: 0 0 auto;
   gap: 6px;
   height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--divider);
-  border-radius: 999px;
-  background: var(--surface);
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 600;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .filter-chip span {
-  min-width: 18px;
-  padding: 1px 5px;
+  min-width: 20px;
+  padding: 1px 6px;
   border-radius: 999px;
-  background: var(--surface-muted);
+  background: var(--surface);
   font-size: 11px;
+  font-weight: 700;
   text-align: center;
 }
 
 .filter-chip.active {
-  border-color: var(--accent);
+  background: var(--surface);
+  color: var(--accent);
+  box-shadow: 0 1px 4px rgba(20, 40, 62, 0.1);
+}
+
+.filter-chip.active span {
   background: var(--accent);
   color: #ffffff;
 }
 
-.filter-chip.active span {
-  background: rgba(255, 255, 255, 0.22);
-}
-
+/* 记录卡片 */
 .record-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -854,149 +990,215 @@ onUnmounted(() => {
   padding: 14px 4px calc(40px + env(safe-area-inset-bottom));
 }
 
-.allergen-card {
-  --level-color: var(--level-none);
-  --level-bg: var(--level-none-bg);
+.ledger-card {
+  --status-color: var(--warning-text);
+  --status-bg: var(--warning-bg);
   display: grid;
-  gap: 6px;
+  gap: 12px;
   min-width: 0;
-  padding: 14px 16px;
-  border: 1px solid var(--divider);
-  border-radius: 16px;
+  padding: 14px;
+  border-radius: 18px;
   background: var(--surface);
-  box-shadow: 0 4px 14px rgba(38, 56, 88, 0.05);
+  box-shadow: 0 1px 2px rgba(38, 56, 88, 0.04), 0 6px 18px rgba(38, 56, 88, 0.06);
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
-.allergen-card:active {
+.ledger-card.settled {
+  --status-color: var(--accent);
+  --status-bg: var(--header-icon-bg);
+}
+
+.ledger-card:active {
   transform: scale(0.985);
 }
 
 @media (hover: hover) {
-  .allergen-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 12px 24px rgba(38, 56, 88, 0.1);
+  .ledger-card:hover {
+    box-shadow: 0 2px 4px rgba(38, 56, 88, 0.05), 0 12px 28px rgba(38, 56, 88, 0.1);
   }
 }
 
-.level-mild {
-  --level-color: var(--level-mild);
-  --level-bg: var(--level-mild-bg);
-}
-
-.level-moderate {
-  --level-color: var(--level-moderate);
-  --level-bg: var(--level-moderate-bg);
-}
-
-.level-severe {
-  --level-color: var(--level-severe);
-  --level-bg: var(--level-severe-bg);
-}
-
-.card-title-row {
+.card-head {
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
 
-.allergen-card h2 {
-  min-width: 0;
+.card-name {
   flex: 1;
+  min-width: 0;
+}
+
+.ledger-card h2 {
   margin: 0;
   color: var(--text-strong);
-  font-size: 17px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.level-badge {
-  flex: 0 0 auto;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--level-bg);
-  color: var(--level-color);
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 700;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.card-rating {
+.card-gift {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.card-gift .el-icon {
+  flex: 0 0 auto;
+  color: var(--warning-text);
+}
+
+.card-gift span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge {
   display: inline-flex;
+  align-items: center;
+  gap: 5px;
   flex: 0 0 auto;
-  gap: 2px;
-  font-size: 15px;
-  line-height: 1;
+  align-self: flex-start;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--status-bg);
+  color: var(--status-color);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
-.card-rating i {
-  font-style: normal;
-  color: var(--surface-muted);
+.status-badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
 }
 
-.card-rating i.on {
-  color: var(--level-color);
+.amounts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  padding: 10px 0;
+  border-radius: 12px;
+  background: var(--surface-soft);
 }
 
-.card-unrated {
-  flex: 0 0 auto;
-  color: var(--text-subtle);
+.amount {
+  min-width: 0;
+  padding: 0 14px;
+}
+
+.amount + .amount {
+  border-left: 1px solid var(--divider);
+}
+
+.amount dt {
+  color: var(--text-muted);
   font-size: 12px;
 }
 
-.card-note {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 13px;
-  line-height: 1.5;
+.amount dd {
+  margin: 2px 0 0;
+  color: var(--text-strong);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
 }
 
+.amount dd small {
+  margin-right: 2px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.55;
+}
+
+.amount.received dd {
+  color: var(--accent);
+}
+
+.amount.empty dd {
+  color: var(--text-muted);
+  font-weight: 400;
+  opacity: 0.45;
+}
+
+/* 空状态 */
 .empty-state {
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 8px;
-  min-height: 56vh;
-  padding: 34px 12px;
+  gap: 6px;
+  min-height: 50vh;
+  padding: 24px 12px;
   text-align: center;
 }
 
 .empty-state.compact {
   min-height: 0;
-  padding: 22px 12px;
+  margin-top: 14px;
 }
 
 .empty-icon {
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
-  margin-bottom: 4px;
-  border-radius: 20px;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+  border-radius: 50%;
   background: var(--header-icon-bg);
   color: var(--accent);
-  font-size: 28px;
+}
+
+.empty-icon .el-icon {
+  font-size: 26px;
 }
 
 .empty-state strong {
   color: var(--text-strong);
-  font-size: 18px;
-}
-
-.empty-state.compact strong {
   font-size: 16px;
+  font-weight: 700;
 }
 
-.empty-state span {
+.empty-desc {
   color: var(--text-muted);
   font-size: 13px;
 }
 
-.empty-state .create-button,
+.text-button {
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.ghost-button {
+  margin-top: 18px;
+}
+
+.empty-state .create-button {
+  min-height: 42px;
+  padding: 0 22px;
+  border-radius: 999px;
+  font-size: 14px;
+  box-shadow: 0 6px 16px rgba(38, 56, 88, 0.14);
+}
+
 .ghost-button {
   margin-top: 10px;
 }
@@ -1010,34 +1212,26 @@ onUnmounted(() => {
   color: var(--accent);
   font-size: 14px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
+/* 弹窗 */
 .home-page :deep(.van-popup) {
   background: var(--surface);
   color: var(--text-main);
 }
 
 .home-page :deep(.edit-popup) {
-  width: min(90vw, 380px);
-  border-radius: 20px;
-  background: var(--surface);
-  box-shadow: 0 18px 48px rgba(38, 56, 88, 0.18);
+  width: min(92vw, 400px);
   max-height: 90vh;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 24px 60px rgba(38, 56, 88, 0.22);
   overflow-y: auto;
 }
 
-.amounts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin: 6px 0;
-  gap: 12px;
-}
-.amounts dt { color: var(--text-muted); font-size: 12px; }
-.amounts dd { margin: 4px 0 0; font-weight: 600; overflow-wrap: anywhere; }
-.card-unrated.settled { color: var(--accent); }
-
 .simple-editor {
-  padding: 18px 18px 16px;
+  padding: 20px 18px 18px;
 }
 
 .editor-head {
@@ -1045,7 +1239,7 @@ onUnmounted(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .editor-head strong,
@@ -1059,9 +1253,10 @@ onUnmounted(() => {
 }
 
 .editor-head span {
-  margin-top: 3px;
+  margin-top: 4px;
   color: var(--text-muted);
   font-size: 12px;
+  line-height: 1.4;
 }
 
 .editor-close {
@@ -1081,6 +1276,7 @@ onUnmounted(() => {
 .field-row {
   display: grid;
   gap: 6px;
+  min-width: 0;
   margin-top: 14px;
 }
 
@@ -1090,13 +1286,10 @@ onUnmounted(() => {
   font-weight: 700;
 }
 
-.field-row > span em {
-  margin-left: 6px;
-  color: var(--text-subtle);
-  font-size: 11px;
-  font-style: normal;
-  font-weight: 500;
-  opacity: 0.8;
+.field-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 
 .simple-input {
@@ -1117,21 +1310,9 @@ onUnmounted(() => {
   appearance: none;
 }
 
-.date-input {
-  line-height: 42px;
-}
-
-.note-input {
-  height: auto;
-  min-height: 76px;
-  padding: 10px 12px;
-  line-height: 1.5;
-  resize: vertical;
-}
-
 .simple-input::placeholder {
   color: var(--text-muted);
-  opacity: 0.65;
+  opacity: 0.6;
 }
 
 .simple-input:focus {
@@ -1140,27 +1321,74 @@ onUnmounted(() => {
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
-.rating-field {
+.toggle-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  min-height: 44px;
-  padding: 0 12px;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 14px;
   border: 1px solid var(--divider);
   border-radius: 12px;
-  background: var(--field-bg);
+  background: var(--surface-soft);
+  cursor: pointer;
 }
 
-.rating-field {
-  --level-color: var(--level-none);
-  --level-bg: var(--level-none-bg);
+.toggle-text strong,
+.toggle-text em {
+  display: block;
 }
 
-.rating-field :deep(.el-rate) {
-  --el-rate-icon-size: 22px;
-  --el-rate-icon-margin: 4px;
-  height: 32px;
+.toggle-text strong {
+  color: var(--text-strong);
+  font-size: 14px;
+}
+
+.toggle-text em {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 28px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--divider);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(20, 40, 62, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.switch:checked {
+  background: var(--accent);
+}
+
+.switch:checked::after {
+  transform: translateX(18px);
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .simple-actions {
@@ -1170,12 +1398,8 @@ onUnmounted(() => {
   margin-top: 20px;
 }
 
-.simple-actions.has-recycle {
-  grid-template-columns: 44px 1fr;
-}
-
 .simple-actions button {
-  height: 44px;
+  height: 46px;
   border: 0;
   border-radius: 12px;
   font-size: 15px;
@@ -1188,15 +1412,7 @@ onUnmounted(() => {
   box-shadow: var(--submit-btn-shadow);
 }
 
-.simple-actions .recycle-btn {
-  display: grid;
-  place-items: center;
-  padding: 0;
-  color: var(--danger-text);
-  background: var(--danger-bg);
-  font-size: 18px;
-}
-
+/* 回收站 */
 .recycle-popup {
   max-height: 78vh;
   overflow-y: auto;
@@ -1206,6 +1422,7 @@ onUnmounted(() => {
   margin: 4px 0 0;
   color: var(--text-muted);
   font-size: 12px;
+  line-height: 1.4;
 }
 
 .recycle-list {
@@ -1219,9 +1436,9 @@ onUnmounted(() => {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
-  padding: 12px;
+  padding: 12px 14px;
   border: 1px solid var(--divider);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--surface-soft);
 }
 
@@ -1264,6 +1481,40 @@ onUnmounted(() => {
   color: var(--danger-text);
 }
 
+/* 账本管理 */
+.book-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.book-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.book-row button {
+  flex-shrink: 0;
+}
+
+.book-row .ghost-button {
+  height: 40px;
+  border-radius: 12px;
+}
+
+.book-row .ghost-button + .ghost-button {
+  border-color: transparent;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.book-row-new {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--divider);
+}
+
 @media (max-width: 520px) {
   .home-page {
     padding: 0 10px;
@@ -1275,24 +1526,28 @@ onUnmounted(() => {
   }
 
   .brand-logo {
-    width: 36px;
-    height: 36px;
+    width: 38px;
+    height: 38px;
   }
 
   .brand-text h1 {
-    font-size: 19px;
+    font-size: 20px;
   }
 
   .record-list {
     padding-inline: 0;
   }
 
-  .allergen-card {
-    padding: 12px 14px;
+  .ledger-card {
+    padding: 12px;
   }
 
-  .allergen-card h2 {
+  .ledger-card h2 {
     font-size: 16px;
+  }
+
+  .amount dd {
+    font-size: 17px;
   }
 
   .recycle-item {

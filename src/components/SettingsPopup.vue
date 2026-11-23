@@ -31,6 +31,15 @@
       </div>
 
       <div class="settings-grid">
+        <button class="settings-item settings-item-feature" type="button" @click="emit('manage-books')">
+          <span class="settings-item-icon">
+            <el-icon><Collection /></el-icon>
+          </span>
+          <span>
+            <strong>账本管理</strong>
+            <em>新增、改名或删除账本</em>
+          </span>
+        </button>
         <button class="settings-item settings-item-feature" type="button" @click="emit('export')">
           <span class="settings-item-icon">
             <el-icon><Download /></el-icon>
@@ -77,7 +86,7 @@
 
 <script lang="ts" setup>
 import { computed } from "vue";
-import { Delete, Download, RefreshLeft, Upload } from "@element-plus/icons-vue";
+import { Collection, Delete, Download, RefreshLeft, Upload } from "@element-plus/icons-vue";
 import type { ThemeKey, ThemeOption } from "@/config/themes";
 
 const props = defineProps<{
@@ -89,6 +98,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
+  "manage-books": [];
   "update:show": [value: boolean];
   "set-theme": [theme: ThemeKey];
   export: [];

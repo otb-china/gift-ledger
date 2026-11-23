@@ -1,19 +1,13 @@
 const toolId = "gift-ledger";
 export const storageKeys = {
+  books: `${toolId}:books`,
+  activeBook: `${toolId}:active-book`,
   entries: `${toolId}:entries`,
   deletedEntries: `${toolId}:deleted-entries`,
-  items: `${toolId}:items`,
-  recycleBin: `${toolId}:recycle-bin`,
   theme: `${toolId}:theme`,
 } as const;
 
 const allowedKeys = new Set<string>(Object.values(storageKeys));
-
-const legacyKeys: Readonly<Record<string, string>> = {
-  [storageKeys.items]: "allergenItems",
-  [storageKeys.recycleBin]: "allergenRecycleBin",
-  [storageKeys.theme]: "allergenTheme",
-};
 
 type Values = Record<string, string>;
 
@@ -24,7 +18,6 @@ interface Snapshot {
 
 const storeName = "data";
 const snapshotKey = `${toolId}:snapshot`;
-const legacySnapshotKey = "snapshot";
 let database: IDBDatabase;
 let current: Snapshot;
 let writes: Promise<unknown> = Promise.resolve();
@@ -59,10 +52,7 @@ function openDatabase(name: string) {
   });
 }
 
-function updateSnapshot(
-  update: (saved: Snapshot | undefined, legacy?: Snapshot) => Snapshot,
-  migrate = false,
-) {
+function updateSnapshot(update: (saved: Snapshot | undefined) => Snapshot) {
   return new Promise<Snapshot>((resolve, reject) => {
     const transaction = database.transaction(storeName, "readwrite", { durability: "strict" });
     const store = transaction.objectStore(storeName);
@@ -71,42 +61,22 @@ function updateSnapshot(
     let failure: unknown;
     transaction.oncomplete = () => resolve(result);
     transaction.onabort = () => reject(failure ?? transaction.error);
-    function applyUpdate(legacy?: Snapshot) {
+    request.onsuccess = () => {
       try {
         const saved: Snapshot | undefined = request.result;
-        result = update(saved, legacy);
+        result = update(saved);
         if (result !== saved) store.put(result, snapshotKey);
       } catch (error) {
         failure = error;
         transaction.abort();
       }
-    }
-    request.onsuccess = () => {
-      if (!migrate || request.result !== undefined) {
-        applyUpdate();
-        return;
-      }
-      const legacy = store.get(legacySnapshotKey);
-      legacy.onsuccess = () => applyUpdate(legacy.result);
     };
   });
 }
 
 export async function initializeStorage() {
   database = await openDatabase(toolId);
-  current = await updateSnapshot((saved, legacy) => {
-    if (saved) return saved;
-    const values: Values = {};
-    for (const [key, alias] of Object.entries(legacyKeys)) {
-      const value = legacy
-        ? legacy.values[key] ?? legacy.values[alias] ?? null
-        : localStorage.getItem(key) ?? localStorage.getItem(alias);
-      if (value === null) continue;
-      JSON.parse(value);
-      values[key] = value;
-    }
-    return { revision: (legacy?.revision ?? 0) + 1, values };
-  }, true);
+  current = await updateSnapshot(saved => saved ?? { revision: 1, values: {} });
 }
 
 export function readStoredValue(key: string): string | null {
