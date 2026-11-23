@@ -57,49 +57,46 @@
     <main class="allergen-view">
       <section v-if="visibleItems.length" class="summary-card" aria-label="合计">
         <div>
-          <span>总随礼</span>
+          <span>共送出</span>
           <strong><small>¥</small>{{ totals.given }}</strong>
         </div>
         <div>
-          <span>总收礼</span>
+          <span>共收到</span>
           <strong><small>¥</small>{{ totals.received }}</strong>
         </div>
       </section>
 
       <section v-if="sortedItems.length" class="record-list" aria-label="礼帐记录">
-        <SwipeDeleteRow v-for="item in sortedItems" :key="item.id" @remove="removeItem(item.id)">
-          <article
-            class="ledger-card"
-            :class="{ settled: isSettled(item) }"
-            tabindex="0"
-            role="button"
-            @click="openEditor(item)"
-            @keydown.space.prevent="openEditor(item)"
-            @keydown.delete.prevent="removeItem(item.id)"
-            @keydown.enter="openEditor(item)"
-          >
-            <div class="card-head">
-              <div class="card-name">
-                <h2>{{ item.name }}</h2>
-                <p v-if="item.gift" class="card-gift">
+        <article v-for="[name, entries] in groupedItems" :key="name" class="ledger-card">
+          <header class="person-head">
+            <h2>{{ name }}</h2>
+            <button type="button" class="add-exchange" :aria-label="`给${name}再记一笔`" @click="openEditor(undefined, name)">记一笔</button>
+          </header>
+          <SwipeDeleteRow v-for="item in entries" :key="item.id" class="exchange-swipe" @remove="removeItem(item.id)">
+            <div class="exchange" :class="{ settled: isSettled(item) }" role="button" tabindex="0"
+              :aria-label="`编辑${name}的往来记录 ${item.note}`" @click="openEditor(item)"
+              @keydown.enter.prevent="openEditor(item)" @keydown.space.prevent="openEditor(item)"
+              @keydown.delete.prevent="removeItem(item.id)">
+              <div v-if="item.note || item.gift" class="exchange-main">
+                <strong v-if="item.note" class="exchange-note">{{ item.note }}</strong>
+                <span v-if="item.gift" class="card-gift">
                   <el-icon><Present /></el-icon>
                   <span>{{ item.gift }}</span>
-                </p>
+                </span>
               </div>
-              <span class="status-badge">{{ statusLabel(item) }}</span>
+              <dl class="amounts">
+                <div class="amount given" :class="{ empty: !item.given }">
+                  <dt>我送出的礼金</dt>
+                  <dd><template v-if="item.given"><small>¥</small>{{ displayAmount(item.given) }}</template><template v-else>—</template></dd>
+                </div>
+                <div class="amount received" :class="{ empty: !item.received }">
+                  <dt>我收到的礼金</dt>
+                  <dd><template v-if="item.received"><small>¥</small>{{ displayAmount(item.received) }}</template><template v-else>—</template></dd>
+                </div>
+              </dl>
             </div>
-            <dl class="amounts">
-              <div class="amount given" :class="{ empty: !item.given }">
-                <dt>随礼</dt>
-                <dd><template v-if="item.given"><small>¥</small>{{ item.given }}</template><template v-else>—</template></dd>
-              </div>
-              <div class="amount received" :class="{ empty: !item.received }">
-                <dt>收礼</dt>
-                <dd><template v-if="item.received"><small>¥</small>{{ item.received }}</template><template v-else>—</template></dd>
-              </div>
-            </dl>
-          </article>
-        </SwipeDeleteRow>
+          </SwipeDeleteRow>
+        </article>
       </section>
 
       <div v-else class="empty-state">
@@ -120,7 +117,7 @@
               {{ editingItemId ? "编辑记录" : "新增记录" }}
               <em class="editor-status" :class="{ settled: isSettled(itemForm) }">{{ statusLabel(itemForm) }}</em>
             </strong>
-            <span>无礼物且随礼与收礼金额相同时自动平账</span>
+            <span>无礼物且我送出和收到的礼金相等时自动平账</span>
           </div>
           <button class="editor-close" type="button" aria-label="关闭" @click="editorPopup = false">
             <el-icon><Close /></el-icon>
@@ -129,16 +126,21 @@
 
         <label class="field-row">
           <span>姓名</span>
-          <input v-model.trim="itemForm.name" class="simple-input" placeholder="填写往来人姓名" />
+          <input v-model.trim="itemForm.name" class="simple-input" placeholder="填写对方姓名" />
+        </label>
+
+        <label v-if="showExchangeNote" class="field-row">
+          <span>往来备注（选填）</span>
+          <input v-model.trim="itemForm.note" class="simple-input" placeholder="例如：结婚、孩子满月" />
         </label>
 
         <div class="field-pair">
           <label class="field-row">
-            <span>随礼（元）</span>
+            <span>我送出的礼金（元）</span>
             <input v-model.trim="itemForm.given" class="simple-input" inputmode="decimal" placeholder="0.00" />
           </label>
           <label class="field-row">
-            <span>收礼（元）</span>
+            <span>我收到的礼金（元）</span>
             <input v-model.trim="itemForm.received" class="simple-input" inputmode="decimal" placeholder="0.00" />
           </label>
         </div>
@@ -283,7 +285,7 @@ const recyclePopup = ref(false);
 const editorPopup = ref(false);
 const editingItemId = ref("");
 const hasGift = ref(false);
-const itemForm = reactive({ name: "", received: "", given: "", gift: "", manualSettled: false });
+const itemForm = reactive({ name: "", received: "", given: "", gift: "", note: "", manualSettled: false });
 const importExportInfo = ref({ show: false });
 const importInfo = ref({ dataStr: "", fileName: "" });
 
@@ -315,7 +317,21 @@ const totals = computed(() => {
 const openTotal = computed(() => visibleItems.value.filter(item => !isSettled(item)).length);
 const sortedItems = computed(() => keywordMatches.value
   .filter(item => statusFilter.value === "all" || isSettled(item) === (statusFilter.value === "settled"))
-  .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+  .sort((a, b) => Number(isSettled(a)) - Number(isSettled(b)) || b.updatedAt.localeCompare(a.updatedAt)));
+
+const groupedItems = computed(() => {
+  const groups = new Map<string, LedgerItem[]>();
+  for (const item of sortedItems.value) {
+    const entries = groups.get(item.name);
+    if (entries) entries.push(item);
+    else groups.set(item.name, [item]);
+  }
+  return groups;
+});
+
+const showExchangeNote = computed(() => Boolean(itemForm.note) || visibleItems.value.some(
+  item => item.name === itemForm.name && item.id !== editingItemId.value,
+));
 
 watch(items, saveItems, { deep: true });
 watch(deletedItems, saveDeletedItems, { deep: true });
@@ -368,7 +384,7 @@ function renameBook(book: LedgerBook) {
 
 function deleteBook(book: LedgerBook) {
   if (books.value.length < 2) return;
-  showConfirmDialog({ title: "删除账本", message: `永久删除“${book.name}”及其全部记录和回收站内容？` }).then(() => {
+  showConfirmDialog({ title: "删除账本", message: `永久删除“${book.name}”及其全部记录和回收站内容？`, confirmButtonText: "删除", className: "app-dialog danger" }).then(() => {
     books.value = books.value.filter(entry => entry.id !== book.id);
     if (activeBook.value === book.id) activeBook.value = books.value[0]!.id;
     items.value = items.value.filter(item => item.bookId !== book.id);
@@ -410,6 +426,7 @@ function normalizeItems(value: unknown): LedgerItem[] {
       bookId: item.bookId || personalBook.id,
       received: readAmount(item.received),
       given: readAmount(item.given),
+      note: typeof item.note === "string" ? item.note.trim() : "",
       gift: typeof item.gift === "string" ? item.gift.trim() : "",
       manualSettled: item.manualSettled === true,
       updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString(),
@@ -444,6 +461,10 @@ function isSettled(item: SettlementFields) {
     validAmount(item.given) && Number(item.received) === Number(item.given));
 }
 
+function displayAmount(value: string) {
+  return Number(value).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+}
+
 function statusLabel(item: SettlementFields) {
   if (item.manualSettled) return "手动平账";
   return isSettled(item) ? "自动平账" : "未平账";
@@ -475,11 +496,12 @@ function setTheme(theme: ThemeKey) {
   void themeStorage.setter(theme).catch(reportSaveError);
 }
 
-function openEditor(item?: LedgerItem) {
+function openEditor(item?: LedgerItem, name = "") {
   editingItemId.value = item?.id || "";
-  itemForm.name = item?.name || "";
+  itemForm.name = item?.name ?? name;
   itemForm.received = item?.received ?? "";
   itemForm.given = item?.given ?? "";
+  itemForm.note = item?.note ?? "";
   itemForm.gift = item?.gift ?? "";
   hasGift.value = Boolean(itemForm.gift);
   itemForm.manualSettled = item?.manualSettled ?? false;
@@ -526,6 +548,7 @@ async function removeItem(id: string) {
       message: `确定将“${target.name}”的记录移入回收站吗？`,
       confirmButtonText: "删除",
       cancelButtonText: "取消",
+      className: "app-dialog danger",
     });
   } catch {
     return;
@@ -662,9 +685,10 @@ async function importData() {
 
 function resetAllData() {
   showConfirmDialog({
-    title: "提示",
-    message: "确认清除所有账本的记录和回收站内容吗？",
-    width: "250px",
+    title: "重置数据",
+    message: "确认清除所有账本的记录和回收站内容吗？此操作不可恢复。",
+    confirmButtonText: "清除",
+    className: "app-dialog danger",
   }).then(async () => {
     try {
       await Promise.all([itemStorage.remove(), recycleStorage.remove()]);
@@ -720,8 +744,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.home-page button:focus-visible,
-.ledger-card:focus-visible {
+.home-page button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -1054,62 +1077,31 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 14px;
-  padding: 14px 4px calc(40px + env(safe-area-inset-bottom));
+  padding: 14px 4px calc(16px + env(safe-area-inset-bottom));
 }
 
 .ledger-card {
-  --status-color: var(--warning-text);
-  --status-bg: var(--warning-bg);
   display: grid;
-  gap: 12px;
   min-width: 0;
-  padding: 14px;
+  padding: 4px 14px 6px;
   border-radius: 18px;
-  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-soft) 100%);
+  background: var(--surface);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 1px rgba(20, 40, 62, 0.04),
-    0 2px 4px rgba(20, 40, 62, 0.05),
-    0 6px 12px rgba(20, 40, 62, 0.06),
-    0 14px 28px rgba(20, 40, 62, 0.08);
-  cursor: pointer;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+    0 1px 2px rgba(20, 40, 62, 0.05),
+    0 4px 10px rgba(20, 40, 62, 0.05),
+    0 12px 24px rgba(20, 40, 62, 0.07);
 }
 
-.ledger-card.settled {
-  --status-color: var(--accent);
-  --status-bg: var(--header-icon-bg);
-}
-
-.ledger-card:active {
-  transform: scale(0.985);
-}
-
-@media (hover: hover) {
-  .ledger-card:hover {
-    transform: translateY(-2px);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.9),
-      0 2px 2px rgba(20, 40, 62, 0.04),
-      0 4px 8px rgba(20, 40, 62, 0.06),
-      0 12px 20px rgba(20, 40, 62, 0.08),
-      0 24px 40px rgba(20, 40, 62, 0.1);
-  }
-}
-
-.card-head {
+.person-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   min-width: 0;
-}
-
-.card-name {
-  flex: 1;
-  min-width: 0;
+  padding: 10px 0 6px;
 }
 
 .ledger-card h2 {
+  min-width: 0;
   margin: 0;
   color: var(--text-strong);
   font-size: 16px;
@@ -1120,14 +1112,67 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.card-gift {
+.add-exchange {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 4px 0 4px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.add-exchange:active {
+  opacity: 0.5;
+}
+
+.exchange-swipe {
+  border-radius: 0;
+}
+
+.exchange-swipe + .exchange-swipe {
+  border-top: 1px solid var(--divider);
+}
+
+.exchange {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.exchange:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.exchange-main {
   display: flex;
   align-items: center;
-  gap: 4px;
-  margin: 3px 0 0;
+  gap: 10px;
+  min-width: 0;
+}
+
+.exchange-note {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-gift {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
   color: var(--text-muted);
   font-size: 12px;
-  line-height: 1.4;
 }
 
 .card-gift .el-icon {
@@ -1142,29 +1187,6 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-  align-self: flex-start;
-  padding: 3px 9px;
-  border-radius: 999px;
-  background: var(--status-bg);
-  color: var(--status-color);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.5;
-}
-
-.status-badge::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
 .amounts {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1176,6 +1198,9 @@ onUnmounted(() => {
 }
 
 .amount {
+  display: grid;
+  align-content: start;
+  gap: 4px;
   min-width: 0;
   padding: 0 14px;
 }
@@ -1190,16 +1215,17 @@ onUnmounted(() => {
 }
 
 .amount dd {
-  margin: 2px 0 0;
+  margin: 0;
   color: var(--text-strong);
   font-size: 18px;
   font-weight: 700;
   line-height: 1.3;
   overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
 }
 
 .amount dd small {
-  margin-right: 2px;
+  margin-right: 1px;
   font-size: 12px;
   font-weight: 600;
   opacity: 0.55;
@@ -1213,6 +1239,18 @@ onUnmounted(() => {
   color: var(--text-muted);
   font-weight: 400;
   opacity: 0.45;
+}
+
+.exchange.settled .amount dd {
+  color: var(--text-muted);
+  font-weight: 600;
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  opacity: 0.6;
+}
+
+.exchange.settled .exchange-note {
+  color: var(--text-muted);
 }
 
 /* 空状态 */
@@ -1643,14 +1681,6 @@ onUnmounted(() => {
 
   .summary-card strong {
     font-size: 21px;
-  }
-
-  .ledger-card {
-    padding: 12px;
-  }
-
-  .ledger-card h2 {
-    font-size: 16px;
   }
 
   .amount dd {
