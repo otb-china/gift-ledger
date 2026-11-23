@@ -55,6 +55,17 @@
     </div>
 
     <main class="allergen-view">
+      <section v-if="visibleItems.length" class="summary-card" aria-label="合计">
+        <div>
+          <span>总随礼</span>
+          <strong><small>¥</small>{{ totals.given }}</strong>
+        </div>
+        <div>
+          <span>总收礼</span>
+          <strong><small>¥</small>{{ totals.received }}</strong>
+        </div>
+      </section>
+
       <section v-if="sortedItems.length" class="record-list" aria-label="礼帐记录">
         <SwipeDeleteRow v-for="item in sortedItems" :key="item.id" @remove="removeItem(item.id)">
           <article
@@ -105,7 +116,10 @@
       <form class="simple-editor" @submit.prevent="saveItem">
         <header class="editor-head">
           <div>
-            <strong>{{ editingItemId ? "编辑记录" : "新增记录" }}</strong>
+            <strong>
+              {{ editingItemId ? "编辑记录" : "新增记录" }}
+              <em class="editor-status" :class="{ settled: isSettled(itemForm) }">{{ statusLabel(itemForm) }}</em>
+            </strong>
             <span>无礼物且随礼与收礼金额相同时自动平账</span>
           </div>
           <button class="editor-close" type="button" aria-label="关闭" @click="editorPopup = false">
@@ -128,16 +142,18 @@
             <input v-model.trim="itemForm.received" class="simple-input" inputmode="decimal" placeholder="0.00" />
           </label>
         </div>
-        <label class="field-row">
-          <span>礼物</span>
-          <input v-model.trim="itemForm.gift" class="simple-input" placeholder="有礼物时填写" />
-        </label>
-        <label class="toggle-row">
-          <span class="toggle-text">
+        <div class="toggle-group">
+          <label class="toggle-row">
+            <strong>礼物</strong>
+            <input v-model="hasGift" class="switch" type="checkbox" @change="!hasGift && (itemForm.gift = '')" />
+          </label>
+          <label class="toggle-row">
             <strong>手动平账</strong>
-            <em>当前状态：{{ statusLabel(itemForm) }}</em>
-          </span>
-          <input v-model="itemForm.manualSettled" class="switch" type="checkbox" />
+            <input v-model="itemForm.manualSettled" class="switch" type="checkbox" />
+          </label>
+        </div>
+        <label v-if="hasGift" class="field-row gift-field">
+          <input v-model.trim="itemForm.gift" class="simple-input" placeholder="填写礼物名称" aria-label="礼物" />
         </label>
 
         <div class="simple-actions">
@@ -266,6 +282,7 @@ const settingsPopup = ref(false);
 const recyclePopup = ref(false);
 const editorPopup = ref(false);
 const editingItemId = ref("");
+const hasGift = ref(false);
 const itemForm = reactive({ name: "", received: "", given: "", gift: "", manualSettled: false });
 const importExportInfo = ref({ show: false });
 const importInfo = ref({ dataStr: "", fileName: "" });
@@ -288,6 +305,12 @@ const keywordMatches = computed(() => {
 const filterCounts = computed(() => {
   const settled = keywordMatches.value.filter(isSettled).length;
   return { all: keywordMatches.value.length, open: keywordMatches.value.length - settled, settled };
+});
+const totals = computed(() => {
+  const sumCents = (key: "given" | "received") => visibleItems.value
+    .reduce((total, item) => total + (validAmount(item[key]) ? Math.round(Number(item[key]) * 100) : 0), 0);
+  const format = (cents: number) => (cents / 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
+  return { given: format(sumCents("given")), received: format(sumCents("received")) };
 });
 const openTotal = computed(() => visibleItems.value.filter(item => !isSettled(item)).length);
 const sortedItems = computed(() => keywordMatches.value
@@ -458,6 +481,7 @@ function openEditor(item?: LedgerItem) {
   itemForm.received = item?.received ?? "";
   itemForm.given = item?.given ?? "";
   itemForm.gift = item?.gift ?? "";
+  hasGift.value = Boolean(itemForm.gift);
   itemForm.manualSettled = item?.manualSettled ?? false;
   editorPopup.value = true;
 }
@@ -982,11 +1006,54 @@ onUnmounted(() => {
   color: #ffffff;
 }
 
+/* 合计 */
+.summary-card {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 14px 4px 0;
+  padding: 16px 0;
+  border-radius: 18px;
+  background: var(--submit-btn-bg);
+  box-shadow: var(--submit-btn-shadow);
+  color: #ffffff;
+}
+
+.summary-card > div {
+  min-width: 0;
+  padding: 0 18px;
+}
+
+.summary-card > div + div {
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.summary-card span {
+  display: block;
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.summary-card strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.summary-card small {
+  margin-right: 2px;
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
 /* 记录卡片 */
 .record-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: 14px;
   padding: 14px 4px calc(40px + env(safe-area-inset-bottom));
 }
 
@@ -998,8 +1065,13 @@ onUnmounted(() => {
   min-width: 0;
   padding: 14px;
   border-radius: 18px;
-  background: var(--surface);
-  box-shadow: 0 1px 2px rgba(38, 56, 88, 0.04), 0 6px 18px rgba(38, 56, 88, 0.06);
+  background: linear-gradient(180deg, var(--surface) 0%, var(--surface-soft) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 1px rgba(20, 40, 62, 0.04),
+    0 2px 4px rgba(20, 40, 62, 0.05),
+    0 6px 12px rgba(20, 40, 62, 0.06),
+    0 14px 28px rgba(20, 40, 62, 0.08);
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
@@ -1015,7 +1087,13 @@ onUnmounted(() => {
 
 @media (hover: hover) {
   .ledger-card:hover {
-    box-shadow: 0 2px 4px rgba(38, 56, 88, 0.05), 0 12px 28px rgba(38, 56, 88, 0.1);
+    transform: translateY(-2px);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 2px 2px rgba(20, 40, 62, 0.04),
+      0 4px 8px rgba(20, 40, 62, 0.06),
+      0 12px 20px rgba(20, 40, 62, 0.08),
+      0 24px 40px rgba(20, 40, 62, 0.1);
   }
 }
 
@@ -1093,7 +1171,8 @@ onUnmounted(() => {
   margin: 0;
   padding: 10px 0;
   border-radius: 12px;
-  background: var(--surface-soft);
+  background: var(--surface-muted);
+  box-shadow: inset 0 1px 3px rgba(20, 40, 62, 0.08);
 }
 
 .amount {
@@ -1321,34 +1400,54 @@ onUnmounted(() => {
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
+.editor-status {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.6;
+  vertical-align: 3px;
+}
+
+.editor-status.settled {
+  background: var(--header-icon-bg);
+  color: var(--accent);
+}
+
+.toggle-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .toggle-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 16px;
-  padding: 12px 14px;
+  gap: 8px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 8px 0 12px;
   border: 1px solid var(--divider);
   border-radius: 12px;
-  background: var(--surface-soft);
+  background: var(--field-bg);
   cursor: pointer;
 }
 
-.toggle-text strong,
-.toggle-text em {
-  display: block;
-}
-
-.toggle-text strong {
+.toggle-row strong {
   color: var(--text-strong);
   font-size: 14px;
+  white-space: nowrap;
 }
 
-.toggle-text em {
-  margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 12px;
-  font-style: normal;
+.gift-field {
+  margin-top: 10px;
 }
 
 .switch {
@@ -1536,6 +1635,14 @@ onUnmounted(() => {
 
   .record-list {
     padding-inline: 0;
+  }
+
+  .summary-card {
+    margin-inline: 0;
+  }
+
+  .summary-card strong {
+    font-size: 21px;
   }
 
   .ledger-card {
