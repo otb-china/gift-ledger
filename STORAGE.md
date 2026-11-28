@@ -14,7 +14,7 @@ IndexedDB 库名为 `gift-ledger`。库版本为 2，使用对象仓库 `data` �
 
 默认账本为个人（ID 为 `personal`）。已有记录和回收站记录缺少 bookId 时归入个人账本。
 
-礼帐记录包含 id、bookId（所属账本）、name、updatedAt（系统更新时间）、received（收礼）、given（随礼）、gift（礼物描述）、note（每笔往来的选填备注，缺省为空字符串）和 manualSettled（手动平账）。金额以元为单位保存为字符串，空串表示未填写。两笔金额都已填写且相等、礼物为空时自动平账。手动平账独立保存。同一账本内按姓名合并展示，每笔往来仍有独立的 id 和平账状态。回收站额外保存 deletedAt。
+礼帐记录包含 id、bookId（所属账本）、name、updatedAt（系统更新时间）、received（收礼）、given（随礼）、gift（送出的礼物描述，沿用原礼物字段）、receivedGift（收到的礼物描述）、note（每笔往来的选填备注）和 manualSettled（手动平账）。金额以元为单位保存为字符串，空串表示未填写。旧记录及备份缺少 receivedGift 或 note 时按空字符串读取。两笔金额都已填写且相等、gift 和 receivedGift 均为空时自动平账。手动平账独立保存。同一账本内按姓名合并展示，每笔往来仍有独立的 id 和平账状态。回收站额外保存 deletedAt。
 
 ## 备份与恢复
 

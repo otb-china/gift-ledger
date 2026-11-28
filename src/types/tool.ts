@@ -10,6 +10,7 @@ export interface LedgerItem {
   received: string;
   given: string;
   gift: string;
+  receivedGift: string;
   note: string;
   manualSettled: boolean;
   updatedAt: string;

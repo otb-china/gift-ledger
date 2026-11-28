@@ -61,7 +61,11 @@
       <section v-if="sortedItems.length" class="record-list" aria-label="礼帐记录">
         <article v-for="[name, entries] in groupedItems" :key="name" class="ledger-card">
           <header class="person-head">
-            <h2>{{ name }}</h2>
+            <span class="person-avatar" aria-hidden="true">{{ name.slice(0, 1) }}</span>
+            <div class="person-title">
+              <h2>{{ name }}</h2>
+              <span>{{ entries.length }} 笔往来</span>
+            </div>
             <button type="button" class="add-exchange" :aria-label="`给${name}再记一笔`" @click="openEditor(undefined, name)">
               <el-icon><Plus /></el-icon>记一笔
             </button>
@@ -71,23 +75,27 @@
               :aria-label="`编辑${name}的往来记录 ${item.note}`" @click="openEditor(item)"
               @keydown.enter.prevent="openEditor(item)" @keydown.space.prevent="openEditor(item)"
               @keydown.delete.prevent="removeItem(item.id)">
-              <div v-if="item.note || item.gift" class="exchange-main">
-                <strong v-if="item.note" class="exchange-note">{{ item.note }}</strong>
-                <span v-if="item.gift" class="card-gift">
-                  <el-icon><Present /></el-icon>
-                  <span>{{ item.gift }}</span>
-                </span>
+              <div class="exchange-main">
+                <strong class="exchange-note" :class="{ placeholder: !item.note }">{{ item.note || "未备注" }}</strong>
+                <span class="balance-hint">{{ balanceHint(item) }}</span>
               </div>
               <dl class="amounts">
                 <div class="amount given" :class="{ empty: !item.given }">
-                  <dt>送出</dt>
+                  <dt><i aria-hidden="true">↑</i>我送出</dt>
                   <dd><template v-if="item.given"><small>¥</small>{{ displayAmount(item.given) }}</template><template v-else>—</template></dd>
+                  <dd v-if="item.gift" class="card-gift">
+                    <el-icon><Present /></el-icon>
+                    <span>{{ item.gift }}</span>
+                  </dd>
                 </div>
                 <div class="amount received" :class="{ empty: !item.received }">
-                  <dt>收到</dt>
+                  <dt><i aria-hidden="true">↓</i>我收到</dt>
                   <dd><template v-if="item.received"><small>¥</small>{{ displayAmount(item.received) }}</template><template v-else>—</template></dd>
+                  <dd v-if="item.receivedGift" class="card-gift">
+                    <el-icon><Present /></el-icon>
+                    <span>{{ item.receivedGift }}</span>
+                  </dd>
                 </div>
-                <span class="balance-hint">{{ balanceHint(item) }}</span>
               </dl>
             </div>
           </SwipeDeleteRow>
@@ -112,7 +120,7 @@
               {{ editingItemId ? "编辑记录" : "新增记录" }}
               <em class="editor-status" :class="{ settled: isSettled(itemForm) }">{{ statusLabel(itemForm) }}</em>
             </strong>
-            <span>无礼物且我送出和收到的礼金相等时自动平账</span>
+            <span>{{ editingItemId ? "修改这笔人情往来" : "记下一笔人情往来" }}</span>
           </div>
           <button class="editor-close" type="button" aria-label="关闭" @click="editorPopup = false">
             <el-icon><Close /></el-icon>
@@ -130,27 +138,36 @@
         </label>
 
         <div class="field-pair">
-          <label class="field-row">
-            <span>我送出的礼金（元）</span>
-            <input v-model.trim="itemForm.given" class="simple-input" inputmode="decimal" placeholder="0.00" />
-          </label>
-          <label class="field-row">
-            <span>我收到的礼金（元）</span>
-            <input v-model.trim="itemForm.received" class="simple-input" inputmode="decimal" placeholder="0.00" />
-          </label>
+          <fieldset class="exchange-fields given">
+            <legend><i aria-hidden="true">↑</i>我送出</legend>
+            <label class="field-row">
+              <span>随礼（元）</span>
+              <input v-model.trim="itemForm.given" class="simple-input" inputmode="decimal" placeholder="0.00" />
+            </label>
+            <label class="field-row">
+              <span>送出的礼物</span>
+              <input v-model.trim="itemForm.gift" class="simple-input" placeholder="选填" />
+            </label>
+          </fieldset>
+          <fieldset class="exchange-fields received">
+            <legend><i aria-hidden="true">↓</i>我收到</legend>
+            <label class="field-row">
+              <span>收礼（元）</span>
+              <input v-model.trim="itemForm.received" class="simple-input" inputmode="decimal" placeholder="0.00" />
+            </label>
+            <label class="field-row">
+              <span>收到的礼物</span>
+              <input v-model.trim="itemForm.receivedGift" class="simple-input" placeholder="选填" />
+            </label>
+          </fieldset>
         </div>
-        <div class="toggle-group">
-          <label class="toggle-row">
-            <strong>礼物</strong>
-            <input v-model="hasGift" class="switch" type="checkbox" @change="!hasGift && (itemForm.gift = '')" />
-          </label>
-          <label class="toggle-row">
+
+        <label class="settlement-toggle">
+          <span>
             <strong>手动平账</strong>
-            <input v-model="itemForm.manualSettled" class="switch" type="checkbox" />
-          </label>
-        </div>
-        <label v-if="hasGift" class="field-row gift-field">
-          <input v-model.trim="itemForm.gift" class="simple-input" placeholder="填写礼物名称" aria-label="礼物" />
+            <small>无礼物且送出、收到礼金相等时会自动平账</small>
+          </span>
+          <input v-model="itemForm.manualSettled" class="switch" type="checkbox" />
         </label>
 
         <div class="simple-actions">
@@ -279,8 +296,7 @@ const settingsPopup = ref(false);
 const recyclePopup = ref(false);
 const editorPopup = ref(false);
 const editingItemId = ref("");
-const hasGift = ref(false);
-const itemForm = reactive({ name: "", received: "", given: "", gift: "", note: "", manualSettled: false });
+const itemForm = reactive({ name: "", received: "", given: "", gift: "", receivedGift: "", note: "", manualSettled: false });
 const importExportInfo = ref({ show: false });
 const importInfo = ref({ dataStr: "", fileName: "" });
 
@@ -296,7 +312,7 @@ const keywordMatches = computed(() => {
   const query = keyword.value.trim().toLowerCase();
   if (!query) return visibleItems.value;
   return visibleItems.value.filter((item) =>
-    item.name.toLowerCase().includes(query) || item.gift.toLowerCase().includes(query),
+    [item.name, item.gift, item.receivedGift].some(value => value.toLowerCase().includes(query)),
   );
 });
 const filterCounts = computed(() => {
@@ -422,6 +438,7 @@ function normalizeItems(value: unknown): LedgerItem[] {
       given: readAmount(item.given),
       note: typeof item.note === "string" ? item.note.trim() : "",
       gift: typeof item.gift === "string" ? item.gift.trim() : "",
+      receivedGift: typeof item.receivedGift === "string" ? item.receivedGift.trim() : "",
       manualSettled: item.manualSettled === true,
       updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString(),
     }));
@@ -438,7 +455,7 @@ function normalizeDeletedItems(value: unknown): DeletedLedgerItem[] {
   });
 }
 
-type SettlementFields = Pick<LedgerItem, "received" | "given" | "gift" | "manualSettled">;
+type SettlementFields = Pick<LedgerItem, "received" | "given" | "gift" | "receivedGift" | "manualSettled">;
 
 function validAmount(value: string) {
   return /^\d{1,12}(?:\.\d{1,2})?$/.test(value);
@@ -451,7 +468,7 @@ function readAmount(value: unknown) {
 }
 
 function isSettled(item: SettlementFields) {
-  return item.manualSettled || (!item.gift.trim() && validAmount(item.received) &&
+  return item.manualSettled || (!item.gift.trim() && !item.receivedGift.trim() && validAmount(item.received) &&
     validAmount(item.given) && Number(item.received) === Number(item.given));
 }
 
@@ -459,7 +476,7 @@ function balanceHint(item: LedgerItem) {
   if (isSettled(item)) return item.manualSettled ? "手动平账" : "已平账";
   const toCents = (value: string) => validAmount(value) ? Math.round(Number(value) * 100) : 0;
   const diff = toCents(item.given) - toCents(item.received);
-  if (!diff) return item.gift ? "待确认" : "未平账";
+  if (!diff) return item.gift || item.receivedGift ? "待确认" : "未平账";
   const amount = (Math.abs(diff) / 100).toLocaleString("zh-CN", { maximumFractionDigits: 2 });
   return diff > 0 ? `对方欠 ¥${amount}` : `我欠 ¥${amount}`;
 }
@@ -506,7 +523,7 @@ function openEditor(item?: LedgerItem, name = "") {
   itemForm.given = item?.given ?? "";
   itemForm.note = item?.note ?? "";
   itemForm.gift = item?.gift ?? "";
-  hasGift.value = Boolean(itemForm.gift);
+  itemForm.receivedGift = item?.receivedGift ?? "";
   itemForm.manualSettled = item?.manualSettled ?? false;
   editorPopup.value = true;
 }
@@ -1046,27 +1063,51 @@ onUnmounted(() => {
 .record-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  padding: 12px 4px calc(16px + env(safe-area-inset-bottom));
+  gap: 14px;
+  padding: 14px 4px calc(16px + env(safe-area-inset-bottom));
 }
 
 .ledger-card {
   display: grid;
   min-width: 0;
-  padding: 10px 14px 4px;
+  padding: 12px 14px 6px;
   border: 1px solid var(--divider);
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--surface);
-  box-shadow: 0 1px 2px rgba(20, 40, 62, 0.04), 0 4px 12px rgba(20, 40, 62, 0.04);
+  box-shadow: 0 1px 2px rgba(20, 40, 62, 0.05), 0 6px 16px rgba(20, 40, 62, 0.05);
 }
 
 .person-head {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  padding-bottom: 6px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--divider);
+}
+
+.person-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--header-icon-bg);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.person-title {
+  display: grid;
+  min-width: 0;
+}
+
+.person-title > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .ledger-card h2 {
@@ -1075,7 +1116,7 @@ onUnmounted(() => {
   color: var(--text-strong);
   font-size: 16px;
   font-weight: 700;
-  line-height: 26px;
+  line-height: 22px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1086,11 +1127,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
-  height: 26px;
+  height: 28px;
   margin-left: auto;
-  padding: 0 2px 0 8px;
-  border: 0;
-  background: transparent;
+  padding: 0 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 999px;
+  background: var(--surface);
   color: var(--accent);
   font-size: 12px;
   font-weight: 600;
@@ -1105,17 +1147,17 @@ onUnmounted(() => {
 }
 
 .exchange-swipe {
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .exchange-swipe + .exchange-swipe .exchange {
-  border-top: 1px dashed var(--divider);
+  border-top: 1px solid var(--divider);
 }
 
 .exchange {
   display: grid;
-  gap: 2px;
-  padding: 8px 0;
+  gap: 8px;
+  padding: 12px 0;
   background: var(--surface);
   cursor: pointer;
 }
@@ -1133,22 +1175,47 @@ onUnmounted(() => {
 }
 
 .exchange-note {
-  color: var(--text-subtle);
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
+  position: relative;
+  min-width: 0;
+  padding-left: 10px;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.card-gift {
+.exchange-note::before {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 0;
+  width: 3px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.exchange-note.placeholder {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.exchange-note.placeholder::before {
+  background: var(--divider);
+}
+
+.amount .card-gift {
   display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  min-width: 0;
+  align-items: baseline;
+  gap: 4px;
   color: var(--text-muted);
   font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
 }
 
 .card-gift .el-icon {
@@ -1157,40 +1224,61 @@ onUnmounted(() => {
 }
 
 .card-gift span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .amounts {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin: 0;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: var(--surface-soft);
+  overflow: hidden;
 }
 
 .amount {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
   min-width: 0;
+  padding: 8px 12px;
+}
+
+.amount + .amount {
+  border-left: 1px solid var(--divider);
 }
 
 .amount dt {
-  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: var(--text-muted);
   font-size: 12px;
 }
 
+.amount dt i {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.amount.received dt i {
+  background: var(--header-icon-bg);
+  color: var(--accent);
+}
+
 .amount dd {
   min-width: 0;
-  margin: 0;
+  margin: 2px 0 0;
   color: var(--text-strong);
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
-  line-height: 24px;
+  line-height: 26px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1199,41 +1287,52 @@ onUnmounted(() => {
 
 .amount dd small {
   margin-right: 1px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   opacity: 0.55;
 }
 
-.amount.received dd {
+.amount.received dd:not(.card-gift) {
   color: var(--accent);
 }
 
-.amount.empty dd {
+.amount.empty dd:not(.card-gift) {
   color: var(--text-muted);
   font-weight: 400;
   opacity: 0.45;
 }
 
 .balance-hint {
-  justify-self: end;
-  padding: 2px 8px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 10px;
   border-radius: 999px;
   background: var(--warning-bg);
   color: var(--warning-text);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 18px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
   white-space: nowrap;
 }
 
-.exchange.settled .amount dd {
+.exchange.settled .amounts {
+  background: var(--surface);
+}
+
+.exchange.settled .amount dd:not(.card-gift) {
   color: var(--text-muted);
   font-weight: 600;
+}
+
+.exchange.settled .exchange-note::before {
+  background: var(--text-muted);
+  opacity: 0.4;
 }
 
 .exchange.settled .balance-hint {
   background: var(--surface-muted);
   color: var(--text-muted);
+  font-weight: 600;
 }
 
 /* 空状态 */
@@ -1390,6 +1489,51 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  margin-top: 14px;
+}
+
+.exchange-fields {
+  min-width: 0;
+  margin: 0;
+  padding: 0 12px 12px;
+  border: 1px solid var(--divider);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.exchange-fields legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.exchange-fields legend i {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: 10px;
+  font-style: normal;
+}
+
+.exchange-fields.received legend i {
+  background: var(--header-icon-bg);
+  color: var(--accent);
+}
+
+.exchange-fields .field-row {
+  margin-top: 8px;
+}
+
+.exchange-fields .simple-input {
+  background: var(--surface);
 }
 
 .simple-input {
@@ -1440,35 +1584,34 @@ onUnmounted(() => {
   color: var(--accent);
 }
 
-.toggle-group {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.toggle-row {
+.settlement-toggle {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-  height: 44px;
-  padding: 0 8px 0 12px;
+  gap: 12px;
+  margin-top: 14px;
+  padding: 12px 14px;
   border: 1px solid var(--divider);
-  border-radius: 12px;
-  background: var(--field-bg);
+  border-radius: 14px;
   cursor: pointer;
 }
 
-.toggle-row strong {
-  color: var(--text-strong);
-  font-size: 14px;
-  white-space: nowrap;
+.settlement-toggle > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
-.gift-field {
-  margin-top: 10px;
+.settlement-toggle strong {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.settlement-toggle small {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .switch {
@@ -1659,7 +1802,7 @@ onUnmounted(() => {
   }
 
   .amount dd {
-    font-size: 15px;
+    font-size: 16px;
   }
 
   .recycle-item {
